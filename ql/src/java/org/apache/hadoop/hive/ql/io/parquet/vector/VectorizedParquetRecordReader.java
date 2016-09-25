@@ -179,6 +179,7 @@ public class VectorizedParquetRecordReader
       serDeStats = new SerDeStats();
       projectionPusher = new ProjectionPusher();
       initialize(inputSplit, conf);
+      colsToInclude = ColumnProjectionUtils.getReadColumnIDs(conf);
       rbCtx = new VectorizedRowBatchCtx();
       rbCtx.init(createStructObjectInspector(), new String[0]);
     } catch (IOException e) {

@@ -17,8 +17,6 @@ import java.io.IOException;
 
 import org.apache.hadoop.hive.ql.io.parquet.vector.VectorizedParquetRecordReader;
 import org.apache.hadoop.mapred.InputSplit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapred.FileInputFormat;
@@ -31,8 +29,6 @@ import org.apache.hadoop.mapred.Reporter;
  */
 public class VectorizedParquetInputFormat
   extends FileInputFormat<NullWritable, VectorizedRowBatch> {
-
-  private static final Logger LOG = LoggerFactory.getLogger(VectorizedParquetInputFormat.class);
 
   public VectorizedParquetInputFormat() {
   }

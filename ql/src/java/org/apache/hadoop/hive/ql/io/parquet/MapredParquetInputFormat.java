@@ -72,8 +72,7 @@ public class MapredParquetInputFormat extends FileInputFormat<NullWritable, Arra
         if (LOG.isDebugEnabled()) {
           LOG.debug("Using row-mode record reader");
         }
-        return (RecordReader<NullWritable, ArrayWritable>)
-          new ParquetRecordReaderWrapper(realInput, split, job, reporter);
+        return new ParquetRecordReaderWrapper(realInput, split, job, reporter);
       }
     } catch (final InterruptedException e) {
       throw new RuntimeException("Cannot create a RecordReaderWrapper", e);
