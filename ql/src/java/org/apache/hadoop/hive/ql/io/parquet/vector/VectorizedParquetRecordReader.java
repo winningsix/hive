@@ -13,22 +13,17 @@
  */
 package org.apache.hadoop.hive.ql.io.parquet.vector;
 
-import com.google.common.base.Strings;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatchCtx;
 import org.apache.hadoop.hive.ql.io.IOConstants;
+import org.apache.hadoop.hive.ql.io.parquet.AbstractParquetRecordReader;
 import org.apache.hadoop.hive.ql.io.parquet.ProjectionPusher;
 import org.apache.hadoop.hive.ql.io.parquet.read.DataWritableReadSupport;
-import org.apache.hadoop.hive.ql.io.parquet.read.ParquetFilterPredicateConverter;
 import org.apache.hadoop.hive.ql.io.parquet.serde.ArrayWritableObjectInspector;
 import org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe;
-import org.apache.hadoop.hive.ql.io.sarg.ConvertAstToSearchArg;
-import org.apache.hadoop.hive.ql.io.sarg.SearchArgument;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
-import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
 import org.apache.hadoop.hive.serde2.SerDeStats;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -37,33 +32,23 @@ import org.apache.hadoop.hive.serde2.typeinfo.ListTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
-import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapreduce.InputSplit;
-import org.apache.hadoop.util.StringUtils;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
 import org.apache.parquet.filter2.compat.FilterCompat;
-import org.apache.parquet.filter2.compat.RowGroupFilter;
-import org.apache.parquet.filter2.predicate.FilterPredicate;
 import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.apache.parquet.hadoop.ParquetInputSplit;
-import org.apache.parquet.hadoop.api.InitContext;
-import org.apache.parquet.hadoop.api.ReadSupport;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
-import org.apache.parquet.hadoop.metadata.FileMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.MessageTypeParser;
 import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
@@ -85,26 +70,18 @@ import static org.apache.parquet.format.converter.ParquetMetadataConverter.range
 import static org.apache.parquet.hadoop.ParquetFileReader.readFooter;
 import static org.apache.parquet.hadoop.ParquetInputFormat.getFilter;
 
-public class VectorizedParquetRecordReader
+public class VectorizedParquetRecordReader extends AbstractParquetRecordReader
   implements RecordReader<NullWritable, VectorizedRowBatch> {
-  private List<Integer> colsToInclude;
   public static final Logger LOG = LoggerFactory.getLogger(VectorizedParquetRecordReader.class);
 
-  protected Path file;
+  private List<Integer> colsToInclude;
+
   protected MessageType fileSchema;
   protected MessageType requestedSchema;
   List<String> columnNamesList;
   List<TypeInfo> columnTypesList;
-  ProjectionPusher projectionPusher;
-  private boolean skipTimestampConversion = false;
-  private SerDeStats serDeStats;
-  private JobConf jobConf;
-  public static final String PARQUET_COLUMN_INDEX_ACCESS = "parquet.column.index.access";
 
   private VectorizedRowBatchCtx rbCtx;
-  private int schemaSize;
-  private List<BlockMetaData> filtedBlocks;
-  protected ParquetFileReader reader;
 
   /**
    * For each request column, the reader to read this column. This is NULL if this column
@@ -127,28 +104,6 @@ public class VectorizedParquetRecordReader
    * rows of all the row groups.
    */
   protected long totalRowCount;
-  /**
-   * From a string which columns names (including hive column), return a list
-   * of string columns
-   *
-   * @param columns comma separated list of columns
-   * @return list with virtual columns removed
-   */
-  private static List<String> getColumnNames(final String columns) {
-    return (List<String>) VirtualColumn.
-      removeVirtualColumns(StringUtils.getStringCollection(columns));
-  }
-
-  /**
-   * Returns a list of TypeInfo objects from a string which contains column
-   * types strings.
-   *
-   * @param types Comma separated list of types
-   * @return A list of TypeInfo objects.
-   */
-  private static List<TypeInfo> getColumnTypes(final String types) {
-    return TypeInfoUtils.getTypeInfosFromTypeString(types);
-  }
 
   public VectorizedParquetRecordReader(
     org.apache.hadoop.mapred.InputSplit oldInputSplit,
@@ -159,17 +114,10 @@ public class VectorizedParquetRecordReader
       initialize(oldInputSplit, conf);
       colsToInclude = ColumnProjectionUtils.getReadColumnIDs(conf);
       rbCtx = Utilities.getVectorizedRowBatchCtx(conf);
-    } catch (IOException e) {
-      e.printStackTrace();
-    } catch (InterruptedException e) {
-      e.printStackTrace();
+    } catch (Throwable e) {
+      LOG.error("Failed to create the vectorized reader due to exception " + e);
+      throw new RuntimeException(e);
     }
-  }
-
-  private StructObjectInspector createStructObjectInspector() {
-    // Create row related objects
-    TypeInfo rowTypeInfo = TypeInfoFactory.getStructTypeInfo(columnNamesList, columnTypesList);
-    return  new ArrayWritableObjectInspector((StructTypeInfo) rowTypeInfo);
   }
 
   public VectorizedParquetRecordReader(
@@ -182,117 +130,18 @@ public class VectorizedParquetRecordReader
       colsToInclude = ColumnProjectionUtils.getReadColumnIDs(conf);
       rbCtx = new VectorizedRowBatchCtx();
       rbCtx.init(createStructObjectInspector(), new String[0]);
-    } catch (IOException e) {
-      e.printStackTrace();
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    } catch (HiveException e) {
-      e.printStackTrace();
+    } catch (Throwable e) {
+      LOG.error("Failed to create the vectorized reader due to exception " + e);
+      throw new RuntimeException(e);
     }
   }
 
-  /**
-   * gets a ParquetInputSplit corresponding to a split given by Hive
-   *
-   * @param oldSplit The split given by Hive
-   * @param conf The JobConf of the Hive job
-   * @return a ParquetInputSplit corresponding to the oldSplit
-   * @throws IOException if the config cannot be enhanced or if the footer cannot be read from the file
-   */
-  @SuppressWarnings("deprecation")
-  protected ParquetInputSplit getSplit(
-    final org.apache.hadoop.mapred.InputSplit oldSplit,
-    final JobConf conf
-  ) throws IOException {
-    ParquetInputSplit split;
-    if (oldSplit instanceof FileSplit) {
-      final Path finalPath = ((FileSplit) oldSplit).getPath();
-      jobConf = projectionPusher.pushProjectionsAndFilters(conf, finalPath.getParent());
-
-      final ParquetMetadata parquetMetadata = ParquetFileReader.readFooter(jobConf, finalPath);
-      final List<BlockMetaData> blocks = parquetMetadata.getBlocks();
-      final FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
-
-      final ReadSupport.ReadContext
-        readContext = new DataWritableReadSupport().init(new InitContext(jobConf,
-        null, fileMetaData.getSchema()));
-
-      // Compute stats
-      for (BlockMetaData bmd : blocks) {
-        serDeStats.setRowCount(serDeStats.getRowCount() + bmd.getRowCount());
-        serDeStats.setRawDataSize(serDeStats.getRawDataSize() + bmd.getTotalByteSize());
-      }
-
-      schemaSize = MessageTypeParser.parseMessageType(readContext.getReadSupportMetadata()
-        .get(DataWritableReadSupport.HIVE_TABLE_AS_PARQUET_SCHEMA)).getFieldCount();
-      final List<BlockMetaData> splitGroup = new ArrayList<BlockMetaData>();
-      final long splitStart = ((FileSplit) oldSplit).getStart();
-      final long splitLength = ((FileSplit) oldSplit).getLength();
-      for (final BlockMetaData block : blocks) {
-        final long firstDataPage = block.getColumns().get(0).getFirstDataPageOffset();
-        if (firstDataPage >= splitStart && firstDataPage < splitStart + splitLength) {
-          splitGroup.add(block);
-        }
-      }
-      if (splitGroup.isEmpty()) {
-        LOG.warn("Skipping split, could not find row group in: " + (FileSplit) oldSplit);
-        return null;
-      }
-
-      FilterCompat.Filter filter = setFilter(jobConf, fileMetaData.getSchema());
-      if (filter != null) {
-        filtedBlocks = RowGroupFilter.filterRowGroups(filter, splitGroup, fileMetaData.getSchema());
-        if (filtedBlocks.isEmpty()) {
-          LOG.debug("All row groups are dropped due to filter predicates");
-          return null;
-        }
-
-        long droppedBlocks = splitGroup.size() - filtedBlocks.size();
-        if (droppedBlocks > 0) {
-          LOG.debug("Dropping " + droppedBlocks + " row groups that do not pass filter predicate");
-        }
-      } else {
-        filtedBlocks = splitGroup;
-      }
-
-      if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_PARQUET_TIMESTAMP_SKIP_CONVERSION)) {
-        skipTimestampConversion = !Strings.nullToEmpty(fileMetaData.getCreatedBy()).startsWith("parquet-mr");
-      }
-      split = new ParquetInputSplit(finalPath,
-        splitStart,
-        splitLength,
-        ((FileSplit) oldSplit).getLocations(),
-        filtedBlocks,
-        readContext.getRequestedSchema().toString(),
-        fileMetaData.getSchema().toString(),
-        fileMetaData.getKeyValueMetaData(),
-        readContext.getReadSupportMetadata());
-      return split;
-    } else {
-      throw new IllegalArgumentException("Unknown split type: " + oldSplit);
-    }
+  private StructObjectInspector createStructObjectInspector() {
+    // Create row related objects
+    TypeInfo rowTypeInfo = TypeInfoFactory.getStructTypeInfo(columnNamesList, columnTypesList);
+    return new ArrayWritableObjectInspector((StructTypeInfo) rowTypeInfo);
   }
 
-  public FilterCompat.Filter setFilter(final JobConf conf, MessageType schema) {
-    SearchArgument sarg = ConvertAstToSearchArg.createFromConf(conf);
-    if (sarg == null) {
-      return null;
-    }
-
-    // Create the Parquet FilterPredicate without including columns that do not exist
-    // on the shema (such as partition columns).
-    FilterPredicate p = ParquetFilterPredicateConverter.toFilterPredicate(sarg, schema);
-    if (p != null) {
-      // Filter may have sensitive information. Do not send to debug.
-      LOG.debug("PARQUET predicate push down generated.");
-      ParquetInputFormat.setFilterPredicate(conf, p);
-      return FilterCompat.get(p);
-    } else {
-      // Filter may have sensitive information. Do not send to debug.
-      LOG.debug("No PARQUET predicate push down is generated.");
-      return null;
-    }
-  }
 
   public void initialize(
     org.apache.hadoop.mapred.InputSplit oldInputSplit,
@@ -307,14 +156,15 @@ public class VectorizedParquetRecordReader
     ParquetMetadata footer;
     List<BlockMetaData> blocks;
     ParquetInputSplit split = (ParquetInputSplit) oldSplit;
-    boolean indexAccess = configuration.getBoolean(PARQUET_COLUMN_INDEX_ACCESS, false);
+    boolean indexAccess =
+      configuration.getBoolean(DataWritableReadSupport.PARQUET_COLUMN_INDEX_ACCESS, false);
     this.file = split.getPath();
     long[] rowGroupOffsets = split.getRowGroupOffsets();
 
     String columnNames = configuration.get(IOConstants.COLUMNS);
-    columnNamesList = getColumnNames(columnNames);
+    columnNamesList = DataWritableReadSupport.getColumnNames(columnNames);
     String columnTypes = configuration.get(IOConstants.COLUMNS_TYPES);
-    columnTypesList = getColumnTypes(columnTypes);
+    columnTypesList = DataWritableReadSupport.getColumnTypes(columnTypes);
 
     // if task.side.metadata is set, rowGroupOffsets is null
     if (rowGroupOffsets == null) {
@@ -541,17 +391,19 @@ public class VectorizedParquetRecordReader
   /**
    * Advances to the next batch of rows. Returns false if there are no more.
    */
-  public boolean nextBatch() throws IOException {
+  private boolean nextBatch() throws IOException {
     initRowBatch();
     columnarBatch.reset();
-    if (rowsReturned >= totalRowCount)
+    if (rowsReturned >= totalRowCount) {
       return false;
+    }
     checkEndOfRowGroup();
 
     int num = (int) Math.min(VectorizedRowBatch.DEFAULT_SIZE, totalCountLoadedSoFar - rowsReturned);
     for (int i = 0; i < columnReaders.length; ++i) {
-      if (columnReaders[i] == null)
+      if (columnReaders[i] == null) {
         continue;
+      }
       columnarBatch.cols[colsToInclude.get(i)].isRepeating = true;
       columnReaders[i].readBatch(num, columnarBatch.cols[colsToInclude.get(i)],
         columnTypesList.get(colsToInclude.get(i)));
@@ -563,7 +415,17 @@ public class VectorizedParquetRecordReader
 
   private void initRowBatch() {
     if (columnarBatch == null) {
-      columnarBatch = rbCtx.createVectorizedRowBatch();
+      if (rbCtx != null) {
+        columnarBatch = rbCtx.createVectorizedRowBatch();
+      } else {
+        // test only
+        rbCtx = new VectorizedRowBatchCtx();
+        try {
+          rbCtx.init(createStructObjectInspector(), new String[0]);
+        } catch (HiveException e) {
+          e.printStackTrace();
+        }
+      }
     }
   }
 
@@ -598,6 +460,7 @@ public class VectorizedParquetRecordReader
 
   @Override
   public long getPos() throws IOException {
+    //TODO
     return 0;
   }
 
@@ -610,49 +473,7 @@ public class VectorizedParquetRecordReader
 
   @Override
   public float getProgress() throws IOException {
+    //TODO
     return 0;
-  }
-
-  /**
-   * Utility classes to abstract over different way to read ints with different encodings.
-   * TODO: remove this layer of abstraction?
-   */
-  abstract static class IntIterator {
-    abstract int nextInt();
-  }
-
-  protected static final class ValuesReaderIntIterator extends IntIterator {
-    ValuesReader delegate;
-
-    public ValuesReaderIntIterator(ValuesReader delegate) {
-      this.delegate = delegate;
-    }
-
-    @Override
-    int nextInt() {
-      return delegate.readInteger();
-    }
-  }
-
-  protected static final class RLEIntIterator extends IntIterator {
-    RunLengthBitPackingHybridDecoder delegate;
-
-    public RLEIntIterator(RunLengthBitPackingHybridDecoder delegate) {
-      this.delegate = delegate;
-    }
-
-    @Override
-    int nextInt() {
-      try {
-        return delegate.readInt();
-      } catch (IOException e) {
-        throw new ParquetDecodingException(e);
-      }
-    }
-  }
-
-  protected static final class NullIntIterator extends IntIterator {
-    @Override
-    int nextInt() { return 0; }
   }
 }

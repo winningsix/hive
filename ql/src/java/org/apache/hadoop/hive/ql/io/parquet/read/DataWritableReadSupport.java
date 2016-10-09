@@ -70,7 +70,7 @@ public class DataWritableReadSupport extends ReadSupport<ArrayWritable> {
    * @param columns comma separated list of columns
    * @return list with virtual columns removed
    */
-  private static List<String> getColumnNames(final String columns) {
+  public static List<String> getColumnNames(final String columns) {
     return (List<String>) VirtualColumn.
         removeVirtualColumns(StringUtils.getStringCollection(columns));
   }
@@ -82,7 +82,7 @@ public class DataWritableReadSupport extends ReadSupport<ArrayWritable> {
    * @param types Comma separated list of types
    * @return A list of TypeInfo objects.
    */
-  private static List<TypeInfo> getColumnTypes(final String types) {
+  public static List<TypeInfo> getColumnTypes(final String types) {
     return TypeInfoUtils.getTypeInfosFromTypeString(types);
   }
 

@@ -95,8 +95,8 @@ public class VectorizedColumnReader {
   /**
    * Repetition/Definition/Value readers.
    */
-  private VectorizedParquetRecordReader.IntIterator repetitionLevelColumn;
-  private VectorizedParquetRecordReader.IntIterator definitionLevelColumn;
+  private IntIterator repetitionLevelColumn;
+  private IntIterator definitionLevelColumn;
   private ValuesReader dataColumn;
 
   // Only set if vectorized decoding is true. This is used instead of the row by row decoding
@@ -585,8 +585,8 @@ public class VectorizedColumnReader {
     ValuesReader rlReader = page.getRlEncoding().getValuesReader(descriptor, REPETITION_LEVEL);
     ValuesReader dlReader = page.getDlEncoding().getValuesReader(descriptor, DEFINITION_LEVEL);
 
-    this.repetitionLevelColumn = new VectorizedParquetRecordReader.ValuesReaderIntIterator(rlReader);
-    this.definitionLevelColumn = new VectorizedParquetRecordReader.ValuesReaderIntIterator(dlReader);
+    this.repetitionLevelColumn = new ValuesReaderIntIterator(rlReader);
+    this.definitionLevelColumn = new ValuesReaderIntIterator(dlReader);
     // Initialize the decoders.
     if (page.getDlEncoding() != Encoding.RLE && descriptor.getMaxDefinitionLevel() != 0) {
       throw new UnsupportedOperationException("Unsupported encoding: " + page.getDlEncoding());
@@ -616,7 +616,7 @@ public class VectorizedColumnReader {
     int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
     this.defColumn =
       new VectorizedRleValuesReader(bitWidth, definitionLevelColumn, repetitionLevelColumn);
-    this.definitionLevelColumn = new VectorizedParquetRecordReader.ValuesReaderIntIterator(this
+    this.definitionLevelColumn = new ValuesReaderIntIterator(this
       .defColumn);
     this.defColumn.initFromBuffer(this.pageValueCount, page.getDefinitionLevels().toByteArray());
     try {
@@ -632,14 +632,13 @@ public class VectorizedColumnReader {
     valuesRead++;
   }
 
-  private VectorizedParquetRecordReader.IntIterator newRLEIterator(int maxLevel, BytesInput bytes) {
+  private IntIterator newRLEIterator(int maxLevel, BytesInput bytes) {
     try {
       if (maxLevel == 0) {
-        return new VectorizedParquetRecordReader.NullIntIterator();
+        return new NullIntIterator();
       }
-      return new VectorizedParquetRecordReader.RLEIntIterator(
-        new RunLengthBitPackingHybridDecoder(
-          BytesUtils.getWidthFromMaxInt(maxLevel),
+      return new RLEIntIterator(
+        new RunLengthBitPackingHybridDecoder(BytesUtils.getWidthFromMaxInt(maxLevel),
           new ByteArrayInputStream(bytes.toByteArray())));
     } catch (IOException e) {
       throw new ParquetDecodingException(
@@ -651,18 +650,63 @@ public class VectorizedColumnReader {
    * Creates a reader for definition and repetition levels, returning an optimized one if
    * the levels are not needed.
    */
-  protected static VectorizedParquetRecordReader.IntIterator createRLEIterator(int maxLevel,
-                                                                               BytesInput bytes,
-                                                 ColumnDescriptor descriptor) throws IOException {
+  protected static IntIterator createRLEIterator(
+    int maxLevel,
+    BytesInput bytes,
+    ColumnDescriptor descriptor) throws IOException {
     try {
-      if (maxLevel == 0) return new VectorizedParquetRecordReader.NullIntIterator();
-      return new VectorizedParquetRecordReader.RLEIntIterator(
-        new RunLengthBitPackingHybridDecoder(
-          BytesUtils.getWidthFromMaxInt(maxLevel),
+      if (maxLevel == 0) {
+        return new NullIntIterator();
+      }
+      return new RLEIntIterator(
+        new RunLengthBitPackingHybridDecoder(BytesUtils.getWidthFromMaxInt(maxLevel),
           new ByteArrayInputStream(bytes.toByteArray())));
     } catch (IOException e) {
       throw new IOException("could not read levels in page for col " + descriptor, e);
     }
   }
 
+
+  /**
+   * Utility classes to abstract over different way to read ints with different encodings.
+   * TODO: remove this layer of abstraction?
+   */
+  abstract static class IntIterator {
+    abstract int nextInt();
+  }
+
+  protected static final class ValuesReaderIntIterator extends IntIterator {
+    ValuesReader delegate;
+
+    public ValuesReaderIntIterator(ValuesReader delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    int nextInt() {
+      return delegate.readInteger();
+    }
+  }
+
+  protected static final class RLEIntIterator extends IntIterator {
+    RunLengthBitPackingHybridDecoder delegate;
+
+    public RLEIntIterator(RunLengthBitPackingHybridDecoder delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    int nextInt() {
+      try {
+        return delegate.readInt();
+      } catch (IOException e) {
+        throw new ParquetDecodingException(e);
+      }
+    }
+  }
+
+  protected static final class NullIntIterator extends IntIterator {
+    @Override
+    int nextInt() { return 0; }
+  }
 }

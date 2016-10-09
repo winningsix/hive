@@ -56,8 +56,8 @@ public class VectorizedRleValuesReader extends ValuesReader implements Vectorize
 
   private int definitionLevel;
 
-  private VectorizedParquetRecordReader.IntIterator repetitionLevelColumn;
-  private VectorizedParquetRecordReader.IntIterator definitionLevelColumn;
+  private VectorizedColumnReader.IntIterator repetitionLevelColumn;
+  private VectorizedColumnReader.IntIterator definitionLevelColumn;
 
   // Buffer of decoded values if the values are PACKED.
   private int[] currentBuffer = new int[16];
@@ -73,8 +73,8 @@ public class VectorizedRleValuesReader extends ValuesReader implements Vectorize
 
   public VectorizedRleValuesReader(
     int bitWidth,
-    VectorizedParquetRecordReader.IntIterator definitionLevelColumn,
-    VectorizedParquetRecordReader.IntIterator repetitionLevelColumn) {
+    VectorizedColumnReader.IntIterator definitionLevelColumn,
+    VectorizedColumnReader.IntIterator repetitionLevelColumn) {
     fixedWidth = true;
     this.definitionLevelColumn = definitionLevelColumn;
     this.repetitionLevelColumn = repetitionLevelColumn;

@@ -22,8 +22,6 @@ public class VectorizedPlainValuesReader extends ValuesReader implements Vectori
   private ByteBitPackingValuesReader booleanStream;
   private byte[] buffer;
   private int offset;
-  private int bitOffset; // Only used for booleans.
-  private ByteBuffer byteBuffer; // used to wrap the byte array buffer
 
   @Override
   public void initFromPage(
