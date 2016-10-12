@@ -13,7 +13,6 @@
  */
 package org.apache.hadoop.hive.ql.io.parquet.vector;
 
-import jodd.datetime.JDateTime;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
@@ -21,6 +20,8 @@ import org.apache.hadoop.hive.ql.exec.vector.DecimalColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector;
+import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTime;
+import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTimeUtils;
 import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
@@ -36,7 +37,6 @@ import org.apache.parquet.column.page.DictionaryPage;
 import org.apache.parquet.column.page.PageReader;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
-import org.apache.parquet.example.data.simple.NanoTime;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.Type;
@@ -47,21 +47,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.sql.Timestamp;
 import java.util.Arrays;
-import java.util.Calendar;
-import java.util.TimeZone;
-import java.util.concurrent.TimeUnit;
 
 import static org.apache.parquet.column.ValuesType.DEFINITION_LEVEL;
 import static org.apache.parquet.column.ValuesType.REPETITION_LEVEL;
 
 public class VectorizedColumnReader {
-  static final long NANOS_PER_HOUR = TimeUnit.HOURS.toNanos(1);
-  static final long NANOS_PER_MINUTE = TimeUnit.MINUTES.toNanos(1);
-  static final long NANOS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
-  static final long NANOS_PER_DAY = TimeUnit.DAYS.toNanos(1);
   private boolean skipTimestampConversion = false;
-  private static final ThreadLocal<Calendar> parquetGMTCalendar = new ThreadLocal<>();
-  private static final ThreadLocal<Calendar> parquetLocalCalendar = new ThreadLocal<>();
 
   /**
    * Total number of values read.
@@ -451,7 +442,7 @@ public class VectorizedColumnReader {
         long timeOfDayNanos = buf.getLong();
         int julianDay = buf.getInt();
         NanoTime nt = new NanoTime(julianDay, timeOfDayNanos);
-        Timestamp ts = getTimestamp(nt, skipTimestampConversion);
+        Timestamp ts = NanoTimeUtils.getTimestamp(nt, skipTimestampConversion);
         ((TimestampColumnVector) column).set(i, ts);
       }
       break;
@@ -465,62 +456,6 @@ public class VectorizedColumnReader {
     default:
       throw new UnsupportedOperationException("Unsupported type: " + descriptor.getType());
     }
-  }
-
-  public static Timestamp getTimestamp(
-    NanoTime nt,
-    boolean skipConversion) {
-    int julianDay = nt.getJulianDay();
-    long nanosOfDay = nt.getTimeOfDayNanos();
-
-    long remainder = nanosOfDay;
-    julianDay += remainder / NANOS_PER_DAY;
-    remainder %= NANOS_PER_DAY;
-    if (remainder < 0) {
-      remainder += NANOS_PER_DAY;
-      julianDay--;
-    }
-
-    JDateTime jDateTime = new JDateTime((double) julianDay);
-    Calendar calendar = getCalendar(skipConversion);
-    calendar.set(Calendar.YEAR, jDateTime.getYear());
-    calendar.set(Calendar.MONTH, jDateTime.getMonth() - 1); //java calendar index starting at 1.
-    calendar.set(Calendar.DAY_OF_MONTH, jDateTime.getDay());
-
-    int hour = (int) (remainder / (NANOS_PER_HOUR));
-    remainder = remainder % (NANOS_PER_HOUR);
-    int minutes = (int) (remainder / (NANOS_PER_MINUTE));
-    remainder = remainder % (NANOS_PER_MINUTE);
-    int seconds = (int) (remainder / (NANOS_PER_SECOND));
-    long nanos = remainder % NANOS_PER_SECOND;
-
-    calendar.set(Calendar.HOUR_OF_DAY, hour);
-    calendar.set(Calendar.MINUTE, minutes);
-    calendar.set(Calendar.SECOND, seconds);
-    Timestamp ts = new Timestamp(calendar.getTimeInMillis());
-    ts.setNanos((int) nanos);
-    return ts;
-  }
-
-  private static Calendar getCalendar(boolean skipConversion) {
-    Calendar calendar = skipConversion ? getLocalCalendar() : getGMTCalendar();
-    calendar.clear(); // Reset all fields before reusing this instance
-    return calendar;
-  }
-
-  private static Calendar getGMTCalendar() {
-    //Calendar.getInstance calculates the current-time needlessly, so cache an instance.
-    if (parquetGMTCalendar.get() == null) {
-      parquetGMTCalendar.set(Calendar.getInstance(TimeZone.getTimeZone("GMT")));
-    }
-    return parquetGMTCalendar.get();
-  }
-
-  private static Calendar getLocalCalendar() {
-    if (parquetLocalCalendar.get() == null) {
-      parquetLocalCalendar.set(Calendar.getInstance());
-    }
-    return parquetLocalCalendar.get();
   }
 
   private void readPage() throws IOException {
