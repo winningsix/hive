@@ -51,6 +51,10 @@ import java.util.Arrays;
 import static org.apache.parquet.column.ValuesType.DEFINITION_LEVEL;
 import static org.apache.parquet.column.ValuesType.REPETITION_LEVEL;
 
+/**
+ * It's column level Parquet reader which is used to read a batch of records for a column,
+ * partial of the code is referred from Apache Spark and Apache Parquet.
+ */
 public class VectorizedColumnReader {
   private boolean skipTimestampConversion = false;
 
@@ -168,7 +172,7 @@ public class VectorizedColumnReader {
         case STRING:
         case CHAR:
         case VARCHAR:
-          readBinarys(num, (BytesColumnVector) column, rowId);
+          readBinaries(num, (BytesColumnVector) column, rowId);
           break;
         case FLOAT:
           readFloats(num, (DoubleColumnVector) column, rowId);
@@ -329,7 +333,7 @@ public class VectorizedColumnReader {
     }
   }
 
-  private void readBinarys(
+  private void readBinaries(
     int total,
     BytesColumnVector c,
     int rowId) throws IOException {
@@ -482,7 +486,7 @@ public class VectorizedColumnReader {
     }
     int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
     this.defColumn =
-      new VectorizedRleValuesReader(bitWidth, definitionLevelColumn, repetitionLevelColumn);
+      new VectorizedRleValuesReader(bitWidth);
     try {
       byte[] bytes = page.getBytes().toByteArray();
       rlReader.initFromPage(pageValueCount, bytes, 0);
@@ -504,7 +508,7 @@ public class VectorizedColumnReader {
 
     int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
     this.defColumn =
-      new VectorizedRleValuesReader(bitWidth, definitionLevelColumn, repetitionLevelColumn);
+      new VectorizedRleValuesReader(bitWidth);
     this.definitionLevelColumn = new ValuesReaderIntIterator(this
       .defColumn);
     this.defColumn.initFromBuffer(this.pageValueCount, page.getDefinitionLevels().toByteArray());

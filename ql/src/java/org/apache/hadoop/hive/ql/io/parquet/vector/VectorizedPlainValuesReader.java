@@ -12,11 +12,14 @@ import org.apache.parquet.io.api.Binary;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import static org.apache.parquet.column.values.bitpacking.Packer.LITTLE_ENDIAN;
 
+/**
+ * Page level reader to read a batch of plain encoded records. Partially code of this class
+ * referred from Apache Spark and Apache Parquet
+ */
 public class VectorizedPlainValuesReader extends ValuesReader implements VectorizedValuesReader{
   protected org.apache.parquet.bytes.LittleEndianDataInputStream in;
   private ByteBitPackingValuesReader booleanStream;
@@ -31,8 +34,7 @@ public class VectorizedPlainValuesReader extends ValuesReader implements Vectori
     this.buffer = bytes;
     this.in = new LittleEndianDataInputStream(
       new ByteArrayInputStream(bytes, offset, bytes.length - offset));
-    booleanStream = new ByteBitPackingValuesReader(1,
-      LITTLE_ENDIAN);
+    booleanStream = new ByteBitPackingValuesReader(1, LITTLE_ENDIAN);
     this.offset = offset;
     booleanStream.initFromPage(valueCount, bytes, offset);
   }
@@ -135,7 +137,7 @@ public class VectorizedPlainValuesReader extends ValuesReader implements Vectori
   }
 
   @Override
-  public void readBinarys(
+  public void readBinaries(
     int total,
     BytesColumnVector c,
     int rowId) {

@@ -23,5 +23,5 @@ public interface VectorizedValuesReader {
   void readLongs(int total, LongColumnVector c, int rowId);
   void readFloats(int total, DoubleColumnVector c, int rowId);
   void readDoubles(int total, DoubleColumnVector c, int rowId);
-  void readBinarys(int total, BytesColumnVector c, int rowId);
+  void readBinaries(int total, BytesColumnVector c, int rowId);
 }

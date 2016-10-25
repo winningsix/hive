@@ -27,8 +27,11 @@ import org.apache.parquet.io.api.Binary;
 import java.io.IOException;
 import java.util.Arrays;
 
+/**
+ * Page level reader to read a batch of RLE encoded records. Partially code of this class
+ * referred from Apache Spark and Apache Parquet
+ */
 public class VectorizedRleValuesReader extends ValuesReader implements VectorizedValuesReader {
-
 
   // Current decoding mode. The encoded data contains groups of either run length encoded data
   // (RLE) or bit packed data. Each group contains a header that indicates which group it is and
@@ -54,11 +57,6 @@ public class VectorizedRleValuesReader extends ValuesReader implements Vectorize
   private int currentCount;
   private int currentValue;
 
-  private int definitionLevel;
-
-  private VectorizedColumnReader.IntIterator repetitionLevelColumn;
-  private VectorizedColumnReader.IntIterator definitionLevelColumn;
-
   // Buffer of decoded values if the values are PACKED.
   private int[] currentBuffer = new int[16];
   private int currentBufferIdx = 0;
@@ -72,19 +70,9 @@ public class VectorizedRleValuesReader extends ValuesReader implements Vectorize
   }
 
   public VectorizedRleValuesReader(
-    int bitWidth,
-    VectorizedColumnReader.IntIterator definitionLevelColumn,
-    VectorizedColumnReader.IntIterator repetitionLevelColumn) {
+    int bitWidth) {
     fixedWidth = true;
-    this.definitionLevelColumn = definitionLevelColumn;
-    this.repetitionLevelColumn = repetitionLevelColumn;
-//    readRepetitionAndDefinitionLevels();
     init(bitWidth);
-  }
-
-  private void readRepetitionAndDefinitionLevels() {
-//    repetitionLevel = repetitionLevelColumn.nextInt();
-    definitionLevel = definitionLevelColumn.nextInt();
   }
 
   @Override
@@ -201,7 +189,7 @@ public class VectorizedRleValuesReader extends ValuesReader implements Vectorize
   }
 
   @Override
-  public void readBinarys(
+  public void readBinaries(
     int total,
     BytesColumnVector c,
     int rowId) {
