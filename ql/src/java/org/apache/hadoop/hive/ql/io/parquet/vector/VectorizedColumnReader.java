@@ -95,11 +95,6 @@ public class VectorizedColumnReader {
   private VectorizedRleValuesReader defColumn;
 
   /**
-   * Total number of values in this column (in this row group).
-   */
-  private final long totalValueCount;
-
-  /**
    * Total values in the current page.
    */
   private int pageValueCount;
@@ -131,10 +126,6 @@ public class VectorizedColumnReader {
       this.dictionary = null;
       this.isCurrentPageDictionaryEncoded = false;
     }
-    this.totalValueCount = pageReader.getTotalValueCount();
-    if (totalValueCount == 0) {
-      throw new IOException("totalValueCount == 0");
-    }
   }
 
   void readBatch(
@@ -151,8 +142,7 @@ public class VectorizedColumnReader {
       if (isCurrentPageDictionaryEncoded) {
         LongColumnVector dictionaryIds = new LongColumnVector();
         // Read and decode dictionary ids.
-        readIntegers(num, dictionaryIds, rowId, maxDefLevel,
-          (VectorizedValuesReader) dataColumn);
+        readIntegers(num, dictionaryIds, rowId);
         decodeDictionaryIds(rowId, num, column, dictionaryIds);
       } else {
         // assign values in vector
@@ -161,37 +151,30 @@ public class VectorizedColumnReader {
         case INT:
         case BYTE:
         case SHORT:
-          readIntegers(num, (LongColumnVector) column, rowId, maxDefLevel,
-            (VectorizedValuesReader) dataColumn);
+          readIntegers(num, (LongColumnVector) column, rowId);
           break;
         case DATE:
         case INTERVAL_YEAR_MONTH:
         case LONG:
-          readLongs(num, (LongColumnVector) column, rowId, maxDefLevel,
-            (VectorizedValuesReader) dataColumn);
+          readLongs(num, (LongColumnVector) column, rowId);
           break;
         case BOOLEAN:
-          readBooleans(num, (LongColumnVector) column, rowId, maxDefLevel,
-            (VectorizedValuesReader) dataColumn);
+          readBooleans(num, (LongColumnVector) column, rowId);
           break;
         case DOUBLE:
-          readDoubles(num, (DoubleColumnVector) column, rowId, maxDefLevel,
-            (VectorizedValuesReader) dataColumn);
+          readDoubles(num, (DoubleColumnVector) column, rowId);
           break;
         case BINARY:
         case STRING:
         case CHAR:
         case VARCHAR:
-          readBinarys(num, (BytesColumnVector) column, rowId, maxDefLevel,
-            (VectorizedValuesReader) dataColumn);
+          readBinarys(num, (BytesColumnVector) column, rowId);
           break;
         case FLOAT:
-          readFloats(num, (DoubleColumnVector) column, rowId, maxDefLevel,
-            (VectorizedValuesReader) dataColumn);
+          readFloats(num, (DoubleColumnVector) column, rowId);
           break;
         case DECIMAL:
-          readDecimal(num, (DecimalColumnVector) column, rowId, maxDefLevel,
-            (VectorizedValuesReader) dataColumn);
+          readDecimal(num, (DecimalColumnVector) column, rowId);
         case INTERVAL_DAY_TIME:
         case TIMESTAMP:
           break;
@@ -211,22 +194,18 @@ public class VectorizedColumnReader {
     }
   }
 
-  public void readIntegers(
+  private void readIntegers(
     int total,
     LongColumnVector c,
-    int rowId,
-    int level,
-    VectorizedValuesReader data) throws IOException {
+    int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       consume();
       readRepetitionAndDefinitionLevels();
-      if (definitionLevel >= level) {
-        c.vector[rowId] = data.readInteger();
+      if (definitionLevel >= maxDefLevel) {
+        c.vector[rowId] = dataColumn.readInteger();
         c.isNull[rowId] = false;
-        if(c.isRepeating){
-          c.isRepeating = (c.vector[0] == c.vector[rowId]);
-        }
+        c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;
@@ -237,22 +216,18 @@ public class VectorizedColumnReader {
     }
   }
 
-  public void readDoubles(
+  private void readDoubles(
     int total,
     DoubleColumnVector c,
-    int rowId,
-    int level,
-    VectorizedValuesReader data) throws IOException {
+    int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       consume();
       readRepetitionAndDefinitionLevels();
-      if (definitionLevel >= level) {
-        c.vector[rowId] = data.readDouble();
+      if (definitionLevel >= maxDefLevel) {
+        c.vector[rowId] = dataColumn.readDouble();
         c.isNull[rowId] = false;
-        if(c.isRepeating){
-          c.isRepeating = (c.vector[0] == c.vector[rowId]);
-        }
+        c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;
@@ -263,22 +238,18 @@ public class VectorizedColumnReader {
     }
   }
 
-  public void readBooleans(
+  private void readBooleans(
     int total,
     LongColumnVector c,
-    int rowId,
-    int level,
-    VectorizedValuesReader data) throws IOException {
+    int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       consume();
       readRepetitionAndDefinitionLevels();
-      if (definitionLevel >= level) {
-        c.vector[rowId] = data.readBoolean() ? 1 : 0;
+      if (definitionLevel >= maxDefLevel) {
+        c.vector[rowId] = dataColumn.readBoolean() ? 1 : 0;
         c.isNull[rowId] = false;
-        if(c.isRepeating){
-          c.isRepeating = (c.vector[0] == c.vector[rowId]);
-        }
+        c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;
@@ -289,22 +260,18 @@ public class VectorizedColumnReader {
     }
   }
 
-  public void readLongs(
+  private void readLongs(
     int total,
     LongColumnVector c,
-    int rowId,
-    int level,
-    VectorizedValuesReader data) throws IOException {
+    int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       consume();
       readRepetitionAndDefinitionLevels();
-      if (definitionLevel >= level) {
-        c.vector[rowId] = data.readLong();
+      if (definitionLevel >= maxDefLevel) {
+        c.vector[rowId] = dataColumn.readLong();
         c.isNull[rowId] = false;
-        if(c.isRepeating){
-          c.isRepeating = (c.vector[0] == c.vector[rowId]);
-        }
+        c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;
@@ -315,22 +282,18 @@ public class VectorizedColumnReader {
     }
   }
 
-  public void readFloats(
+  private void readFloats(
     int total,
     DoubleColumnVector c,
-    int rowId,
-    int level,
-    VectorizedValuesReader data) throws IOException {
+    int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       consume();
       readRepetitionAndDefinitionLevels();
-      if (definitionLevel >= level) {
-        c.vector[rowId] = data.readFloat();
+      if (definitionLevel >= maxDefLevel) {
+        c.vector[rowId] = dataColumn.readFloat();
         c.isNull[rowId] = false;
-        if(c.isRepeating){
-          c.isRepeating = (c.vector[0] == c.vector[rowId]);
-        }
+        c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;
@@ -341,25 +304,21 @@ public class VectorizedColumnReader {
     }
   }
 
-  public void readDecimal(
+  private void readDecimal(
     int total,
     DecimalColumnVector c,
-    int rowId,
-    int level,
-    VectorizedValuesReader data) throws IOException {
+    int rowId) throws IOException {
     int left = total;
     c.precision = (short) type.asPrimitiveType().getDecimalMetadata().getPrecision();
     c.scale = (short) type.asPrimitiveType().getDecimalMetadata().getScale();
     while (left > 0) {
       consume();
       readRepetitionAndDefinitionLevels();
-      if (definitionLevel >= level) {
-        c.vector[rowId] = new HiveDecimalWritable(data.readBytes().getBytesUnsafe(),
+      if (definitionLevel >= maxDefLevel) {
+        c.vector[rowId] = new HiveDecimalWritable(dataColumn.readBytes().getBytesUnsafe(),
           type.asPrimitiveType().getDecimalMetadata().getScale());
         c.isNull[rowId] = false;
-        if(c.isRepeating){
-          c.isRepeating = (c.vector[0] == c.vector[rowId]);
-        }
+        c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;
@@ -370,24 +329,20 @@ public class VectorizedColumnReader {
     }
   }
 
-  public void readBinarys(
+  private void readBinarys(
     int total,
     BytesColumnVector c,
-    int rowId,
-    int level,
-    VectorizedValuesReader data) throws IOException {
+    int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       consume();
       readRepetitionAndDefinitionLevels();
-      if (definitionLevel >= level) {
-        Binary binary = data.readBytes();
+      if (definitionLevel >= maxDefLevel) {
+        Binary binary = dataColumn.readBytes();
         c.setVal(rowId, binary.getBytesUnsafe());
         c.isNull[rowId] = false;
-        if(c.isRepeating){
-          c.isRepeating = Arrays.equals(binary.getBytesUnsafe(),
-            ArrayUtils.subarray(c.vector[0], c.start[0], c.length[0]));
-        }
+        c.isRepeating = c.isRepeating && Arrays.equals(binary.getBytesUnsafe(),
+          ArrayUtils.subarray(c.vector[0], c.start[0], c.length[0]));
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;
@@ -407,9 +362,8 @@ public class VectorizedColumnReader {
     if (column.noNulls) {
       column.noNulls = dictionaryIds.noNulls ? true : false;
     }
-    if(column.isRepeating){
-      column.isRepeating = dictionaryIds.isRepeating;
-    }
+    column.isRepeating = column.isRepeating && dictionaryIds.isRepeating;
+
     switch (descriptor.getType()) {
     case INT32:
       for (int i = rowId; i < rowId + num; ++i) {

@@ -218,150 +218,24 @@ public class VectorizedParquetRecordReader extends AbstractParquetRecordReader
         indexSequence.add(i);
       }
 
-      tableSchema = getSchemaByIndex(fileSchema, columnNamesList, indexSequence);
+      tableSchema = DataWritableReadSupport.getSchemaByIndex(fileSchema, columnNamesList,
+        indexSequence);
     } else {
-
-      tableSchema = getSchemaByName(fileSchema, columnNamesList, columnTypesList);
+      tableSchema = DataWritableReadSupport.getSchemaByName(fileSchema, columnNamesList,
+        columnTypesList);
     }
 //    this.hiveTypeInfo = TypeInfoFactory.getStructTypeInfo(columnNamesList, columnTypesList);
 
     List<Integer> indexColumnsWanted = ColumnProjectionUtils.getReadColumnIDs(configuration);
     if (!ColumnProjectionUtils.isReadAllColumns(configuration) && !indexColumnsWanted.isEmpty()) {
-      requestedSchema = getSchemaByIndex(tableSchema, columnNamesList, indexColumnsWanted);
+      requestedSchema = DataWritableReadSupport.getSchemaByIndex(tableSchema, columnNamesList,
+        indexColumnsWanted);
     }else{
       requestedSchema = fileSchema;
     }
 
     this.reader = new ParquetFileReader(
       configuration, footer.getFileMetaData(), file, blocks, requestedSchema.getColumns());
-  }
-
-  /**
-   * Searchs column names by name on a given Parquet schema, and returns its corresponded
-   * Parquet schema types.
-   *
-   * @param schema Group schema where to search for column names.
-   * @param colNames List of column names.
-   * @param colTypes List of column types.
-   * @return List of GroupType objects of projected columns.
-   */
-  private static List<Type> getProjectedGroupFields(GroupType schema, List<String> colNames, List<TypeInfo> colTypes) {
-    List<Type> schemaTypes = new ArrayList<Type>();
-
-    ListIterator<String> columnIterator = colNames.listIterator();
-    while (columnIterator.hasNext()) {
-      TypeInfo colType = colTypes.get(columnIterator.nextIndex());
-      String colName = columnIterator.next();
-
-      Type fieldType = getFieldTypeIgnoreCase(schema, colName);
-      if (fieldType == null) {
-        schemaTypes.add(Types.optional(PrimitiveType.PrimitiveTypeName.BINARY).named(colName));
-      } else {
-        schemaTypes.add(getProjectedType(colType, fieldType));
-      }
-    }
-
-    return schemaTypes;
-  }
-
-  private static Type getProjectedType(TypeInfo colType, Type fieldType) {
-    switch (colType.getCategory()) {
-    case STRUCT:
-      List<Type> groupFields = getProjectedGroupFields(
-        fieldType.asGroupType(),
-        ((StructTypeInfo) colType).getAllStructFieldNames(),
-        ((StructTypeInfo) colType).getAllStructFieldTypeInfos()
-      );
-
-      Type[] typesArray = groupFields.toArray(new Type[0]);
-      return Types.buildGroup(fieldType.getRepetition())
-        .addFields(typesArray)
-        .named(fieldType.getName());
-    case LIST:
-      TypeInfo elemType = ((ListTypeInfo) colType).getListElementTypeInfo();
-      if (elemType.getCategory() == ObjectInspector.Category.STRUCT) {
-        Type subFieldType = fieldType.asGroupType().getType(0);
-        if (!subFieldType.isPrimitive()) {
-          String subFieldName = subFieldType.getName();
-          Text name = new Text(subFieldName);
-          if (name.equals(ParquetHiveSerDe.ARRAY) || name.equals(ParquetHiveSerDe.LIST)) {
-            subFieldType = new GroupType(Type.Repetition.REPEATED, subFieldName,
-              getProjectedType(elemType, subFieldType.asGroupType().getType(0)));
-          } else {
-            subFieldType = getProjectedType(elemType, subFieldType);
-          }
-          return Types.buildGroup(Type.Repetition.OPTIONAL).as(OriginalType.LIST).addFields(
-            subFieldType).named(fieldType.getName());
-        }
-      }
-      break;
-    default:
-    }
-    return fieldType;
-  }
-
-
-  /**
-   * Searchs for a fieldName into a parquet GroupType by ignoring string case.
-   * GroupType#getType(String fieldName) is case sensitive, so we use this method.
-   *
-   * @param groupType Group of field types where to search for fieldName
-   * @param fieldName The field what we are searching
-   * @return The Type object of the field found; null otherwise.
-   */
-  private static Type getFieldTypeIgnoreCase(GroupType groupType, String fieldName) {
-    for (Type type : groupType.getFields()) {
-      if (type.getName().equalsIgnoreCase(fieldName)) {
-        return type;
-      }
-    }
-
-    return null;
-  }
-
-
-  /**
-   * Searchs column names by name on a given Parquet message schema, and returns its projected
-   * Parquet schema types.
-   *
-   * @param schema Message type schema where to search for column names.
-   * @param colNames List of column names.
-   * @param colTypes List of column types.
-   * @return A MessageType object of projected columns.
-   */
-  private static MessageType getSchemaByName(MessageType schema, List<String> colNames, List<TypeInfo> colTypes) {
-    List<Type> projectedFields = getProjectedGroupFields(schema, colNames, colTypes);
-    Type[] typesArray = projectedFields.toArray(new Type[0]);
-
-    return Types.buildMessage()
-      .addFields(typesArray)
-      .named(schema.getName());
-  }
-
-  /**
-   * Searchs column names by index on a given Parquet file schema, and returns its corresponded
-   * Parquet schema types.
-   *
-   * @param schema Message schema where to search for column names.
-   * @param colNames List of column names.
-   * @param colIndexes List of column indexes.
-   * @return A MessageType object of the column names found.
-   */
-  private static MessageType getSchemaByIndex(MessageType schema, List<String> colNames, List<Integer> colIndexes) {
-    List<Type> schemaTypes = new ArrayList<Type>();
-
-    for (Integer i : colIndexes) {
-      if (i < colNames.size()) {
-        if (i < schema.getFieldCount()) {
-          schemaTypes.add(schema.getType(i));
-        } else {
-          //prefixing with '_mask_' to ensure no conflict with named
-          //columns in the file schema
-          schemaTypes.add(Types.optional(PrimitiveType.PrimitiveTypeName.BINARY).named("_mask_" + colNames.get(i)));
-        }
-      }
-    }
-    return new MessageType(schema.getName(), schemaTypes);
   }
 
   /**
@@ -430,7 +304,9 @@ public class VectorizedParquetRecordReader extends AbstractParquetRecordReader
   }
 
   private void checkEndOfRowGroup() throws IOException {
-    if (rowsReturned != totalCountLoadedSoFar) return;
+    if (rowsReturned != totalCountLoadedSoFar) {
+      return;
+    }
     PageReadStore pages = reader.readNextRowGroup();
     if (pages == null) {
       throw new IOException("expecting more rows but reached last block. Read "
