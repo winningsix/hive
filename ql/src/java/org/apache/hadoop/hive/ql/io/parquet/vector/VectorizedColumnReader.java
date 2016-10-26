@@ -40,6 +40,8 @@ import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -50,12 +52,16 @@ import java.util.Arrays;
 
 import static org.apache.parquet.column.ValuesType.DEFINITION_LEVEL;
 import static org.apache.parquet.column.ValuesType.REPETITION_LEVEL;
+import static org.apache.parquet.column.ValuesType.VALUES;
 
 /**
  * It's column level Parquet reader which is used to read a batch of records for a column,
  * partial of the code is referred from Apache Spark and Apache Parquet.
  */
 public class VectorizedColumnReader {
+
+  private static final Logger LOG = LoggerFactory.getLogger(VectorizedColumnReader.class);
+
   private boolean skipTimestampConversion = false;
 
   /**
@@ -93,10 +99,6 @@ public class VectorizedColumnReader {
   private IntIterator repetitionLevelColumn;
   private IntIterator definitionLevelColumn;
   private ValuesReader dataColumn;
-
-  // Only set if vectorized decoding is true. This is used instead of the row by row decoding
-  // with `definitionLevelColumn`.
-  private VectorizedRleValuesReader defColumn;
 
   /**
    * Total values in the current page.
@@ -146,7 +148,7 @@ public class VectorizedColumnReader {
       if (isCurrentPageDictionaryEncoded) {
         LongColumnVector dictionaryIds = new LongColumnVector();
         // Read and decode dictionary ids.
-        readIntegers(num, dictionaryIds, rowId);
+        readDictionaryIDs(num, dictionaryIds, rowId);
         decodeDictionaryIds(rowId, num, column, dictionaryIds);
       } else {
         // assign values in vector
@@ -195,6 +197,28 @@ public class VectorizedColumnReader {
     int leftInPage = (int) (endOfPageValueCount - valuesRead);
     if (leftInPage == 0) {
       readPage();
+    }
+  }
+
+  private void readDictionaryIDs(
+    int total,
+    LongColumnVector c,
+    int rowId) throws IOException {
+    int left = total;
+    while (left > 0) {
+      consume();
+      readRepetitionAndDefinitionLevels();
+      if (definitionLevel >= maxDefLevel) {
+        c.vector[rowId] = dataColumn.readValueDictionaryId();
+        c.isNull[rowId] = false;
+        c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
+      } else {
+        c.isNull[rowId] = true;
+        c.isRepeating = false;
+        c.noNulls = false;
+      }
+      rowId++;
+      left--;
     }
   }
 
@@ -416,33 +440,32 @@ public class VectorizedColumnReader {
     }
   }
 
+  private void readRepetitionAndDefinitionLevels() {
+    repetitionLevel = repetitionLevelColumn.nextInt();
+    definitionLevel = definitionLevelColumn.nextInt();
+    valuesRead++;
+  }
+
   private void readPage() throws IOException {
     DataPage page = pageReader.readPage();
     // TODO: Why is this a visitor?
     page.accept(new DataPage.Visitor<Void>() {
       @Override
       public Void visit(DataPageV1 dataPageV1) {
-        try {
-          readPageV1(dataPageV1);
-          return null;
-        } catch (IOException e) {
-          throw new RuntimeException(e);
-        }
+        readPageV1(dataPageV1);
+        return null;
       }
 
       @Override
       public Void visit(DataPageV2 dataPageV2) {
-        try {
-          readPageV2(dataPageV2);
-          return null;
-        } catch (IOException e) {
-          throw new RuntimeException(e);
-        }
+        readPageV2(dataPageV2);
+        return null;
       }
     });
   }
 
-  private void initDataReader(Encoding dataEncoding, byte[] bytes, int offset) throws IOException {
+  private void initDataReader(Encoding dataEncoding, byte[] bytes, int offset, int valueCount) throws IOException {
+    this.pageValueCount = valueCount;
     this.endOfPageValueCount = valuesRead + pageValueCount;
     if (dataEncoding.usesDictionary()) {
       this.dataColumn = null;
@@ -451,18 +474,13 @@ public class VectorizedColumnReader {
           "could not read page in col " + descriptor +
             " as the dictionary was missing for encoding " + dataEncoding);
       }
-      @SuppressWarnings("deprecation")
-      Encoding plainDict = Encoding.PLAIN_DICTIONARY; // var to allow warning suppression
-      if (dataEncoding != plainDict && dataEncoding != Encoding.RLE_DICTIONARY) {
-        throw new UnsupportedOperationException("Unsupported encoding: " + dataEncoding);
-      }
-      this.dataColumn = new VectorizedRleValuesReader();
+      dataColumn = dataEncoding.getDictionaryBasedValuesReader(descriptor, VALUES, dictionary);
       this.isCurrentPageDictionaryEncoded = true;
     } else {
       if (dataEncoding != Encoding.PLAIN) {
         throw new UnsupportedOperationException("Unsupported encoding: " + dataEncoding);
       }
-      this.dataColumn = new VectorizedPlainValuesReader();
+      dataColumn = dataEncoding.getValuesReader(descriptor, VALUES);
       this.isCurrentPageDictionaryEncoded = false;
     }
 
@@ -473,56 +491,38 @@ public class VectorizedColumnReader {
     }
   }
 
-  private void readPageV1(DataPageV1 page) throws IOException {
-    this.pageValueCount = page.getValueCount();
+  private void readPageV1(DataPageV1 page) {
     ValuesReader rlReader = page.getRlEncoding().getValuesReader(descriptor, REPETITION_LEVEL);
     ValuesReader dlReader = page.getDlEncoding().getValuesReader(descriptor, DEFINITION_LEVEL);
-
     this.repetitionLevelColumn = new ValuesReaderIntIterator(rlReader);
     this.definitionLevelColumn = new ValuesReaderIntIterator(dlReader);
-    // Initialize the decoders.
-    if (page.getDlEncoding() != Encoding.RLE && descriptor.getMaxDefinitionLevel() != 0) {
-      throw new UnsupportedOperationException("Unsupported encoding: " + page.getDlEncoding());
-    }
-    int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
-    this.defColumn =
-      new VectorizedRleValuesReader(bitWidth);
     try {
       byte[] bytes = page.getBytes().toByteArray();
+      LOG.debug("page size " + bytes.length + " bytes and " + pageValueCount + " records");
+      LOG.debug("reading repetition levels at 0");
       rlReader.initFromPage(pageValueCount, bytes, 0);
       int next = rlReader.getNextOffset();
+      LOG.debug("reading definition levels at " + next);
       dlReader.initFromPage(pageValueCount, bytes, next);
       next = dlReader.getNextOffset();
-      initDataReader(page.getValueEncoding(), bytes, next);
+      LOG.debug("reading data at " + next);
+      initDataReader(page.getValueEncoding(), bytes, next, page.getValueCount());
     } catch (IOException e) {
-      throw new IOException("could not read page " + page + " in col " + descriptor, e);
+      throw new ParquetDecodingException("could not read page " + page + " in col " + descriptor, e);
     }
   }
 
-  private void readPageV2(DataPageV2 page) throws IOException {
+  private void readPageV2(DataPageV2 page) {
     this.pageValueCount = page.getValueCount();
-    this.repetitionLevelColumn = createRLEIterator(descriptor.getMaxRepetitionLevel(),
-      page.getRepetitionLevels(), descriptor);
-    this.definitionLevelColumn = newRLEIterator(descriptor.getMaxDefinitionLevel(), page
-      .getDefinitionLevels());
-
-    int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
-    this.defColumn =
-      new VectorizedRleValuesReader(bitWidth);
-    this.definitionLevelColumn = new ValuesReaderIntIterator(this
-      .defColumn);
-    this.defColumn.initFromBuffer(this.pageValueCount, page.getDefinitionLevels().toByteArray());
+    this.repetitionLevelColumn = newRLEIterator(descriptor.getMaxRepetitionLevel(),
+      page.getRepetitionLevels());
+    this.definitionLevelColumn = newRLEIterator(descriptor.getMaxDefinitionLevel(), page.getDefinitionLevels());
     try {
-      initDataReader(page.getDataEncoding(), page.getData().toByteArray(), 0);
+      LOG.debug("page data size " + page.getData().size() + " bytes and " + pageValueCount + " records");
+      initDataReader(page.getDataEncoding(), page.getData().toByteArray(), 0, page.getValueCount());
     } catch (IOException e) {
-      throw new IOException("could not read page " + page + " in col " + descriptor, e);
+      throw new ParquetDecodingException("could not read page " + page + " in col " + descriptor, e);
     }
-  }
-
-  private void readRepetitionAndDefinitionLevels() {
-    repetitionLevel = repetitionLevelColumn.nextInt();
-    definitionLevel = definitionLevelColumn.nextInt();
-    valuesRead++;
   }
 
   private IntIterator newRLEIterator(int maxLevel, BytesInput bytes) {
@@ -531,11 +531,11 @@ public class VectorizedColumnReader {
         return new NullIntIterator();
       }
       return new RLEIntIterator(
-        new RunLengthBitPackingHybridDecoder(BytesUtils.getWidthFromMaxInt(maxLevel),
+        new RunLengthBitPackingHybridDecoder(
+          BytesUtils.getWidthFromMaxInt(maxLevel),
           new ByteArrayInputStream(bytes.toByteArray())));
     } catch (IOException e) {
-      throw new ParquetDecodingException(
-        "could not read levels in page for col " + descriptor, e);
+      throw new ParquetDecodingException("could not read levels in page for col " + descriptor, e);
     }
   }
 

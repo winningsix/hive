@@ -1,6 +1,5 @@
 package org.apache.hadoop.hive.ql.io.parquet;
 
-import junit.framework.Assert;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
