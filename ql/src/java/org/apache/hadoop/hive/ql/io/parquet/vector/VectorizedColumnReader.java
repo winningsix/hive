@@ -205,7 +205,6 @@ public class VectorizedColumnReader {
     int rowId) throws IOException {
     int left = total;
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         c.vector[rowId] = dataColumn.readValueDictionaryId();
@@ -227,7 +226,6 @@ public class VectorizedColumnReader {
     int rowId) throws IOException {
     int left = total;
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         c.vector[rowId] = dataColumn.readInteger();
@@ -249,7 +247,6 @@ public class VectorizedColumnReader {
     int rowId) throws IOException {
     int left = total;
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         c.vector[rowId] = dataColumn.readDouble();
@@ -271,7 +268,6 @@ public class VectorizedColumnReader {
     int rowId) throws IOException {
     int left = total;
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         c.vector[rowId] = dataColumn.readBoolean() ? 1 : 0;
@@ -293,7 +289,6 @@ public class VectorizedColumnReader {
     int rowId) throws IOException {
     int left = total;
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         c.vector[rowId] = dataColumn.readLong();
@@ -315,7 +310,6 @@ public class VectorizedColumnReader {
     int rowId) throws IOException {
     int left = total;
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         c.vector[rowId] = dataColumn.readFloat();
@@ -339,11 +333,9 @@ public class VectorizedColumnReader {
     c.precision = (short) type.asPrimitiveType().getDecimalMetadata().getPrecision();
     c.scale = (short) type.asPrimitiveType().getDecimalMetadata().getScale();
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
-        c.vector[rowId] = new HiveDecimalWritable(dataColumn.readBytes().getBytesUnsafe(),
-          type.asPrimitiveType().getDecimalMetadata().getScale());
+        c.vector[rowId] = new HiveDecimalWritable(dataColumn.readBytes().getBytesUnsafe(), c.scale);
         c.isNull[rowId] = false;
         c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
@@ -361,15 +353,17 @@ public class VectorizedColumnReader {
     BytesColumnVector c,
     int rowId) throws IOException {
     int left = total;
+    byte[] bytes = null;
     while (left > 0) {
-      consume();
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         Binary binary = dataColumn.readBytes();
         c.setVal(rowId, binary.getBytesUnsafe());
         c.isNull[rowId] = false;
-        c.isRepeating = c.isRepeating && Arrays.equals(binary.getBytesUnsafe(),
-          ArrayUtils.subarray(c.vector[0], c.start[0], c.length[0]));
+        if (bytes == null) {
+          bytes = ArrayUtils.subarray(c.vector[0], c.start[0], c.length[0]);
+        }
+        c.isRepeating = c.isRepeating && Arrays.equals(binary.getBytesUnsafe(), bytes);
       } else {
         c.isNull[rowId] = true;
         c.isRepeating = false;

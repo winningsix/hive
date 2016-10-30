@@ -377,6 +377,5 @@ public class TestVectorizedColumnReader {
     } finally {
       reader.close();
     }
-
   }
 }

@@ -228,34 +228,17 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
       configuration, footer.getFileMetaData(), file, blocks, requestedSchema.getColumns());
   }
 
-  /**
-   * columnBatch object that is used for batch decoding. This is created on first use and triggers
-   * batched decoding. It is not valid to interleave calls to the batched interface with the row
-   * by row RecordReader APIs.
-   * This is only enabled with additional flags for development. This is still a work in progress
-   * and currently unsupported cases will fail with potentially difficult to diagnose errors.
-   * This should be only turned on for development to work on this feature.
-   *
-   * When this is set, the code will branch early on in the RecordReader APIs. There is no shared
-   * code between the path that uses the MR decoders and the vectorized ones.
-   *
-   * TODOs:
-   *  - Implement v2 page formats (just make sure we create the correct decoders).
-   */
-  private VectorizedRowBatch columnarBatch;
-
   @Override
   public boolean next(
     NullWritable nullWritable,
     VectorizedRowBatch vectorizedRowBatch) throws IOException {
-    columnarBatch = vectorizedRowBatch;
-    return nextBatch();
+    return nextBatch(vectorizedRowBatch);
   }
 
   /**
    * Advances to the next batch of rows. Returns false if there are no more.
    */
-  private boolean nextBatch() throws IOException {
+  private boolean nextBatch(VectorizedRowBatch columnarBatch) throws IOException {
     initRowBatch();
     columnarBatch.reset();
     if (rowsReturned >= totalRowCount) {
@@ -277,20 +260,18 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
     return true;
   }
 
-  private void initRowBatch() {
-    if (columnarBatch == null) {
-      if (rbCtx != null) {
-        columnarBatch = rbCtx.createVectorizedRowBatch();
-      } else {
-        // test only
-        rbCtx = new VectorizedRowBatchCtx();
-        try {
-          rbCtx.init(createStructObjectInspector(), new String[0]);
-        } catch (HiveException e) {
-          e.printStackTrace();
-        }
+  private VectorizedRowBatch initRowBatch() {
+    // test only
+    if (rbCtx == null) {
+      rbCtx = new VectorizedRowBatchCtx();
+      try {
+        rbCtx.init(createStructObjectInspector(), new String[0]);
+      } catch (HiveException e) {
+        e.printStackTrace();
       }
     }
+
+    return rbCtx.createVectorizedRowBatch();
   }
 
   private void checkEndOfRowGroup() throws IOException {
@@ -320,8 +301,7 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
 
   @Override
   public VectorizedRowBatch createValue() {
-    initRowBatch();
-    return columnarBatch;
+    return initRowBatch();
   }
 
   @Override
@@ -332,9 +312,6 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
 
   @Override
   public void close() throws IOException {
-    if (columnarBatch != null) {
-      columnarBatch = null;
-    }
   }
 
   @Override
