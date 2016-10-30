@@ -177,10 +177,7 @@ public class DataWritableReadSupport extends ReadSupport<ArrayWritable> {
    * @param colTypes List of column types.
    * @return A MessageType object of projected columns.
    */
-  public static MessageType getSchemaByName(
-    MessageType schema,
-    List<String> colNames,
-    List<TypeInfo> colTypes) {
+  public static MessageType getSchemaByName(MessageType schema, List<String> colNames, List<TypeInfo> colTypes) {
     List<Type> projectedFields = getProjectedGroupFields(schema, colNames, colTypes);
     Type[] typesArray = projectedFields.toArray(new Type[0]);
 
@@ -198,10 +195,7 @@ public class DataWritableReadSupport extends ReadSupport<ArrayWritable> {
    * @param colIndexes List of column indexes.
    * @return A MessageType object of the column names found.
    */
-  public static MessageType getSchemaByIndex(
-    MessageType schema,
-    List<String> colNames,
-    List<Integer> colIndexes) {
+  public static MessageType getSchemaByIndex(MessageType schema, List<String> colNames, List<Integer> colIndexes) {
     List<Type> schemaTypes = new ArrayList<Type>();
 
     for (Integer i : colIndexes) {

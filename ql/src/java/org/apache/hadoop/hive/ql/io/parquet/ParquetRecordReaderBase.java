@@ -43,8 +43,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class AbstractParquetRecordReader {
-  public static final Logger LOG = LoggerFactory.getLogger(AbstractParquetRecordReader.class);
+public class ParquetRecordReaderBase {
+  public static final Logger LOG = LoggerFactory.getLogger(ParquetRecordReaderBase.class);
 
   protected Path file;
   protected ProjectionPusher projectionPusher;

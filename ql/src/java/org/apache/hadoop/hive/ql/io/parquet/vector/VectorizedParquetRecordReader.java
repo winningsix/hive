@@ -17,7 +17,7 @@ import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatchCtx;
 import org.apache.hadoop.hive.ql.io.IOConstants;
-import org.apache.hadoop.hive.ql.io.parquet.AbstractParquetRecordReader;
+import org.apache.hadoop.hive.ql.io.parquet.ParquetRecordReaderBase;
 import org.apache.hadoop.hive.ql.io.parquet.ProjectionPusher;
 import org.apache.hadoop.hive.ql.io.parquet.read.DataWritableReadSupport;
 import org.apache.hadoop.hive.ql.io.parquet.serde.ArrayWritableObjectInspector;
@@ -58,10 +58,10 @@ import static org.apache.parquet.hadoop.ParquetFileReader.readFooter;
 import static org.apache.parquet.hadoop.ParquetInputFormat.getFilter;
 
 /**
- * This reader is used to read a batch of record from inputsplit, partial of the code is referred
+ * This reader is used to read a batch of record from inputsplit, part of the code is referred
  * from Apache Spark and Apache Parquet.
  */
-public class VectorizedParquetRecordReader extends AbstractParquetRecordReader
+public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
   implements RecordReader<NullWritable, VectorizedRowBatch> {
   public static final Logger LOG = LoggerFactory.getLogger(VectorizedParquetRecordReader.class);
 
@@ -69,8 +69,8 @@ public class VectorizedParquetRecordReader extends AbstractParquetRecordReader
 
   protected MessageType fileSchema;
   protected MessageType requestedSchema;
-  List<String> columnNamesList;
-  List<TypeInfo> columnTypesList;
+  private List<String> columnNamesList;
+  private List<TypeInfo> columnTypesList;
 
   private VectorizedRowBatchCtx rbCtx;
 
@@ -215,7 +215,6 @@ public class VectorizedParquetRecordReader extends AbstractParquetRecordReader
       tableSchema = DataWritableReadSupport.getSchemaByName(fileSchema, columnNamesList,
         columnTypesList);
     }
-//    this.hiveTypeInfo = TypeInfoFactory.getStructTypeInfo(columnNamesList, columnTypesList);
 
     List<Integer> indexColumnsWanted = ColumnProjectionUtils.getReadColumnIDs(configuration);
     if (!ColumnProjectionUtils.isReadAllColumns(configuration) && !indexColumnsWanted.isEmpty()) {

@@ -14,9 +14,8 @@
 package org.apache.hadoop.hive.ql.io.parquet.read;
 
 import java.io.IOException;
-import java.util.List;
 
-import org.apache.hadoop.hive.ql.io.parquet.AbstractParquetRecordReader;
+import org.apache.hadoop.hive.ql.io.parquet.ParquetRecordReaderBase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -37,10 +36,9 @@ import org.apache.hadoop.mapreduce.TaskAttemptID;
 
 import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.apache.parquet.hadoop.ParquetInputSplit;
-import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.util.ContextUtil;
 
-public class ParquetRecordReaderWrapper extends AbstractParquetRecordReader
+public class ParquetRecordReaderWrapper extends ParquetRecordReaderBase
   implements RecordReader<NullWritable, ArrayWritable>, StatsProvidingRecordReader {
   public static final Logger LOG = LoggerFactory.getLogger(ParquetRecordReaderWrapper.class);
 

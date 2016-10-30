@@ -183,7 +183,6 @@ public class VectorizedColumnReader {
           readDecimal(num, (DecimalColumnVector) column, rowId);
         case INTERVAL_DAY_TIME:
         case TIMESTAMP:
-          break;
         default:
           throw new IOException("Unsupported");
         }
@@ -388,7 +387,7 @@ public class VectorizedColumnReader {
                                    LongColumnVector dictionaryIds) {
     System.arraycopy(dictionaryIds.isNull, rowId, column.isNull, rowId, num);
     if (column.noNulls) {
-      column.noNulls = dictionaryIds.noNulls ? true : false;
+      column.noNulls = dictionaryIds.noNulls;
     }
     column.isRepeating = column.isRepeating && dictionaryIds.isRepeating;
 
@@ -538,27 +537,6 @@ public class VectorizedColumnReader {
       throw new ParquetDecodingException("could not read levels in page for col " + descriptor, e);
     }
   }
-
-  /**
-   * Creates a reader for definition and repetition levels, returning an optimized one if
-   * the levels are not needed.
-   */
-  protected static IntIterator createRLEIterator(
-    int maxLevel,
-    BytesInput bytes,
-    ColumnDescriptor descriptor) throws IOException {
-    try {
-      if (maxLevel == 0) {
-        return new NullIntIterator();
-      }
-      return new RLEIntIterator(
-        new RunLengthBitPackingHybridDecoder(BytesUtils.getWidthFromMaxInt(maxLevel),
-          new ByteArrayInputStream(bytes.toByteArray())));
-    } catch (IOException e) {
-      throw new IOException("could not read levels in page for col " + descriptor, e);
-    }
-  }
-
 
   /**
    * Utility classes to abstract over different way to read ints with different encodings.
