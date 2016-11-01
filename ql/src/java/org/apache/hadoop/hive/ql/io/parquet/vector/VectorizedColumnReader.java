@@ -335,7 +335,7 @@ public class VectorizedColumnReader {
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
-        c.vector[rowId] = new HiveDecimalWritable(dataColumn.readBytes().getBytesUnsafe(), c.scale);
+        c.vector[rowId].set(dataColumn.readBytes().getBytesUnsafe(), c.scale);
         c.isNull[rowId] = false;
         c.isRepeating = c.isRepeating && (c.vector[0] == c.vector[rowId]);
       } else {
