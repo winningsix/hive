@@ -13,6 +13,7 @@
  */
 package org.apache.hadoop.hive.ql.io.parquet.vector;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatchCtx;
@@ -96,53 +97,37 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
    */
   protected long totalRowCount;
 
-  public VectorizedParquetRecordReader(
-    org.apache.hadoop.mapred.InputSplit oldInputSplit,
-    JobConf conf) {
-    try {
-      serDeStats = new SerDeStats();
-      projectionPusher = new ProjectionPusher();
-      initialize(oldInputSplit, conf);
-      colsToInclude = ColumnProjectionUtils.getReadColumnIDs(conf);
-      rbCtx = Utilities.getVectorizedRowBatchCtx(conf);
-    } catch (Throwable e) {
-      LOG.error("Failed to create the vectorized reader due to exception " + e);
-      throw new RuntimeException(e);
-    }
-  }
-
+  @VisibleForTesting
   public VectorizedParquetRecordReader(
     InputSplit inputSplit,
     JobConf conf) {
     try {
-      serDeStats = new SerDeStats();
-      projectionPusher = new ProjectionPusher();
       initialize(inputSplit, conf);
-      colsToInclude = ColumnProjectionUtils.getReadColumnIDs(conf);
-      rbCtx = new VectorizedRowBatchCtx();
-      rbCtx.init(createStructObjectInspector(), new String[0]);
     } catch (Throwable e) {
       LOG.error("Failed to create the vectorized reader due to exception " + e);
       throw new RuntimeException(e);
     }
   }
 
-  private StructObjectInspector createStructObjectInspector() {
-    // Create row related objects
-    TypeInfo rowTypeInfo = TypeInfoFactory.getStructTypeInfo(columnNamesList, columnTypesList);
-    return new ArrayWritableObjectInspector((StructTypeInfo) rowTypeInfo);
-  }
-
-
-  public void initialize(
+  public VectorizedParquetRecordReader(
     org.apache.hadoop.mapred.InputSplit oldInputSplit,
-    JobConf configuration) throws IOException, InterruptedException {
-    initialize(getSplit(oldInputSplit, configuration), configuration);
+    JobConf conf) {
+    try {
+      initialize(getSplit(oldInputSplit, conf), conf);
+    } catch (Throwable e) {
+      LOG.error("Failed to create the vectorized reader due to exception " + e);
+      throw new RuntimeException(e);
+    }
   }
 
   public void initialize(
     InputSplit oldSplit,
     JobConf configuration) throws IOException, InterruptedException {
+    serDeStats = new SerDeStats();
+    projectionPusher = new ProjectionPusher();
+    colsToInclude = ColumnProjectionUtils.getReadColumnIDs(configuration);
+    rbCtx = Utilities.getVectorizedRowBatchCtx(configuration);
+
     jobConf = configuration;
     ParquetMetadata footer;
     List<BlockMetaData> blocks;
@@ -159,6 +144,7 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
 
     // if task.side.metadata is set, rowGroupOffsets is null
     if (rowGroupOffsets == null) {
+      //TODO check whether rowGroupOffSets can be null
       // then we need to apply the predicate push down filter
       footer = readFooter(configuration, file, range(split.getStart(), split.getEnd()));
       MessageType fileSchema = footer.getFileMetaData().getSchema();
@@ -235,11 +221,36 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
     return nextBatch(vectorizedRowBatch);
   }
 
+  @Override
+  public NullWritable createKey() {
+    return NullWritable.get();
+  }
+
+  @Override
+  public VectorizedRowBatch createValue() {
+    return rbCtx.createVectorizedRowBatch();
+  }
+
+  @Override
+  public long getPos() throws IOException {
+    //TODO
+    return 0;
+  }
+
+  @Override
+  public void close() throws IOException {
+  }
+
+  @Override
+  public float getProgress() throws IOException {
+    //TODO
+    return 0;
+  }
+
   /**
    * Advances to the next batch of rows. Returns false if there are no more.
    */
   private boolean nextBatch(VectorizedRowBatch columnarBatch) throws IOException {
-    initRowBatch();
     columnarBatch.reset();
     if (rowsReturned >= totalRowCount) {
       return false;
@@ -260,20 +271,6 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
     return true;
   }
 
-  private VectorizedRowBatch initRowBatch() {
-    // test only
-    if (rbCtx == null) {
-      rbCtx = new VectorizedRowBatchCtx();
-      try {
-        rbCtx.init(createStructObjectInspector(), new String[0]);
-      } catch (HiveException e) {
-        e.printStackTrace();
-      }
-    }
-
-    return rbCtx.createVectorizedRowBatch();
-  }
-
   private void checkEndOfRowGroup() throws IOException {
     if (rowsReturned != totalCountLoadedSoFar) {
       return;
@@ -292,31 +289,5 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
           skipTimestampConversion, types.get(i));
     }
     totalCountLoadedSoFar += pages.getRowCount();
-  }
-
-  @Override
-  public NullWritable createKey() {
-    return NullWritable.get();
-  }
-
-  @Override
-  public VectorizedRowBatch createValue() {
-    return initRowBatch();
-  }
-
-  @Override
-  public long getPos() throws IOException {
-    //TODO
-    return 0;
-  }
-
-  @Override
-  public void close() throws IOException {
-  }
-
-  @Override
-  public float getProgress() throws IOException {
-    //TODO
-    return 0;
   }
 }

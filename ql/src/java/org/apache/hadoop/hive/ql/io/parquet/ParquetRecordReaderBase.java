@@ -74,6 +74,8 @@ public class ParquetRecordReaderBase {
       final Path finalPath = ((FileSplit) oldSplit).getPath();
       jobConf = projectionPusher.pushProjectionsAndFilters(conf, finalPath.getParent());
 
+      // TODO enable MetadataFilter by using readFooter(Configuration configuration, Path file,
+      // TODO MetadataFilter filter) API
       final ParquetMetadata parquetMetadata = ParquetFileReader.readFooter(jobConf, finalPath);
       final List<BlockMetaData> blocks = parquetMetadata.getBlocks();
       final FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
@@ -100,7 +102,7 @@ public class ParquetRecordReaderBase {
         }
       }
       if (splitGroup.isEmpty()) {
-        LOG.warn("Skipping split, could not find row group in: " + (FileSplit) oldSplit);
+        LOG.warn("Skipping split, could not find row group in: " + oldSplit);
         return null;
       }
 
@@ -126,7 +128,7 @@ public class ParquetRecordReaderBase {
       split = new ParquetInputSplit(finalPath,
         splitStart,
         splitLength,
-        ((FileSplit) oldSplit).getLocations(),
+        oldSplit.getLocations(),
         filtedBlocks,
         readContext.getRequestedSchema().toString(),
         fileMetaData.getSchema().toString(),

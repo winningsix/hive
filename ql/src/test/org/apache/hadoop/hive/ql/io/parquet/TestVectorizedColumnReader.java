@@ -4,13 +4,24 @@ import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
+import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatchCtx;
 import org.apache.hadoop.hive.ql.io.IOConstants;
+import org.apache.hadoop.hive.ql.io.parquet.read.DataWritableReadSupport;
+import org.apache.hadoop.hive.ql.io.parquet.serde.ArrayWritableObjectInspector;
 import org.apache.hadoop.hive.ql.io.parquet.vector.VectorizedParquetRecordReader;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.plan.MapWork;
 import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
+import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapred.JobConf;
@@ -28,6 +39,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Random;
 
 import static junit.framework.Assert.assertTrue;
@@ -126,7 +138,6 @@ public class TestVectorizedColumnReader {
   }
 
   public static void initialStrings(String[] uniqueStrs) {
-    int nulls = 0;
     for (int i = 0; i < uniqueStrs.length; i++) {
       String str = getRandomStr();
       if (!str.isEmpty()) {
@@ -139,13 +150,36 @@ public class TestVectorizedColumnReader {
   }
 
   private VectorizedParquetRecordReader createParquetReader(String schemaString, Configuration conf)
-    throws IOException, InterruptedException {
+    throws IOException, InterruptedException, HiveException {
     conf.set(PARQUET_READ_SCHEMA, schemaString);
+    HiveConf.setBoolVar(conf, HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED, true);
+    HiveConf.setVar(conf, HiveConf.ConfVars.PLAN, "//tmp");
+
     Job vectorJob = new Job(conf, "read vector");
     ParquetInputFormat.setInputPaths(vectorJob, file);
     ParquetInputFormat parquetInputFormat = new ParquetInputFormat(GroupReadSupport.class);
     InputSplit split = (InputSplit) parquetInputFormat.getSplits(vectorJob).get(0);
+    initialVectorizedRowBatchCtx(conf);
     return new VectorizedParquetRecordReader(split, new JobConf(conf));
+  }
+
+  private void initialVectorizedRowBatchCtx(Configuration conf) throws HiveException {
+    MapWork mapWork = new MapWork();
+    VectorizedRowBatchCtx rbCtx = new VectorizedRowBatchCtx();
+    rbCtx.init(createStructObjectInspector(conf), new String[0]);
+    mapWork.setVectorMode(true);
+    mapWork.setVectorizedRowBatchCtx(rbCtx);
+    Utilities.setMapWork(conf, mapWork);
+  }
+
+  private StructObjectInspector createStructObjectInspector(Configuration conf) {
+    // Create row related objects
+    String columnNames = conf.get(IOConstants.COLUMNS);
+    List<String> columnNamesList = DataWritableReadSupport.getColumnNames(columnNames);
+    String columnTypes = conf.get(IOConstants.COLUMNS_TYPES);
+    List<TypeInfo> columnTypesList = DataWritableReadSupport.getColumnTypes(columnTypes);
+    TypeInfo rowTypeInfo = TypeInfoFactory.getStructTypeInfo(columnNamesList, columnTypesList);
+    return new ArrayWritableObjectInspector((StructTypeInfo) rowTypeInfo);
   }
 
   @Test

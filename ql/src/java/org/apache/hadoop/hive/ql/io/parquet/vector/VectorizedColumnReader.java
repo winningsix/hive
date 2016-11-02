@@ -22,7 +22,6 @@ import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector;
 import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTime;
 import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTimeUtils;
-import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.parquet.bytes.BytesInput;
@@ -56,7 +55,7 @@ import static org.apache.parquet.column.ValuesType.VALUES;
 
 /**
  * It's column level Parquet reader which is used to read a batch of records for a column,
- * partial of the code is referred from Apache Spark and Apache Parquet.
+ * part of the code is referred from Apache Spark and Apache Parquet.
  */
 public class VectorizedColumnReader {
 
@@ -142,8 +141,12 @@ public class VectorizedColumnReader {
     int rowId = 0;
     while (total > 0) {
       // Compute the number of values we want to read in this page.
-      consume();
       int leftInPage = (int) (endOfPageValueCount - valuesRead);
+      if (leftInPage == 0) {
+        readPage();
+      }
+
+      leftInPage = (int) (endOfPageValueCount - valuesRead);
       int num = Math.min(total, leftInPage);
       if (isCurrentPageDictionaryEncoded) {
         LongColumnVector dictionaryIds = new LongColumnVector();
@@ -189,13 +192,6 @@ public class VectorizedColumnReader {
       }
       rowId += num;
       total -= num;
-    }
-  }
-
-  private void consume() throws IOException {
-    int leftInPage = (int) (endOfPageValueCount - valuesRead);
-    if (leftInPage == 0) {
-      readPage();
     }
   }
 
