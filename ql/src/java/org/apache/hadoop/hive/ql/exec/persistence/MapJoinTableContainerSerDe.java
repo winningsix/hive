@@ -97,6 +97,62 @@ public class MapJoinTableContainerSerDe {
     }
   }
 
+  public void loadHybridGraceHashJoin(
+    FileSystem fs, Path folder, MapJoinTableContainer tableContainer, Configuration hconf) throws HiveException {
+    try {
+
+      if (!fs.exists(folder)) {
+        return;
+      }
+      if (!fs.isDirectory(folder)) {
+        throw new HiveException("Error, not a directory: " + folder);
+      }
+      FileStatus[] fileStatuses = fs.listStatus(folder);
+      if (fileStatuses == null || fileStatuses.length == 0) {
+        return;
+      }
+
+      AbstractSerDe keySerDe = keyContext.getSerDe();
+      AbstractSerDe valueSerDe = valueContext.getSerDe();
+      Writable keyContainer = keySerDe.getSerializedClass().newInstance();
+      Writable valueContainer = valueSerDe.getSerializedClass().newInstance();
+
+      boolean useOptimizedContainer = HiveConf.getBoolVar(
+        hconf, HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
+
+      for (FileStatus fileStatus: fileStatuses) {
+        Path filePath = fileStatus.getPath();
+        if (ShimLoader.getHadoopShims().isDirectory(fileStatus)) {
+          throw new HiveException("Error, not a file: " + filePath);
+        }
+        InputStream is = null;
+        ObjectInputStream in = null;
+        try {
+          is = fs.open(filePath);
+          in = new ObjectInputStream(is);
+          tableContainer.setSerde(keyContext, valueContext);
+          if (useOptimizedContainer) {
+            loadOptimized(tableContainer, in, keyContainer, valueContainer);
+          } else {
+            loadNormalHybridHashJoin(tableContainer, in, keyContainer, valueContainer);
+          }
+        } finally {
+          if (in != null) {
+            in.close();
+          } else if (is != null) {
+            is.close();
+          }
+        }
+      }
+      tableContainer.seal();
+
+    } catch (IOException e) {
+      throw new HiveException("IO error while trying to create table container", e);
+    } catch (Exception e) {
+      throw new HiveException("Error while trying to create table container", e);
+    }
+  }
+
   /**
    * Loads the table container from a folder. Only used on Spark path.
    * @param fs FileSystem of the folder.
@@ -174,6 +230,16 @@ public class MapJoinTableContainerSerDe {
     }
   }
 
+  private void loadNormalHybridHashJoin(MapJoinTableContainer container,
+                          ObjectInputStream in, Writable key, Writable value) throws Exception {
+    int numKeys = in.readInt();
+    for (int keyIndex = 0; keyIndex < numKeys; keyIndex++) {
+      key.readFields(in);
+      value.readFields(in);
+      container.putRow(key, value);
+    }
+  }
+
   private void loadNormal(MapJoinPersistableTableContainer container,
       ObjectInputStream in, Writable keyContainer, Writable valueContainer) throws Exception {
     int numKeys = in.readInt();
@@ -189,7 +255,7 @@ public class MapJoinTableContainerSerDe {
     }
   }
 
-  private void loadOptimized(MapJoinBytesTableContainer container, ObjectInputStream in,
+  private void loadOptimized(MapJoinTableContainer container, ObjectInputStream in,
       Writable key, Writable value) throws Exception {
     int numKeys = in.readInt();
     for (int keyIndex = 0; keyIndex < numKeys; keyIndex++) {
@@ -202,20 +268,32 @@ public class MapJoinTableContainerSerDe {
     }
   }
 
+  public MapJoinTableContainer loadFastContainer(MapJoinDesc mapJoinDesc,
+                                                 FileSystem fs, Path folder, Configuration hconf) throws HiveException {
+    MapJoinTableContainer tableContainer;
+    try {
+      tableContainer = new VectorMapJoinFastTableContainer(mapJoinDesc, hconf, -1);
+    } catch (SerDeException e) {
+      throw new HiveException("Failed to initial map join container");
+    }
+    loadFastContainerHelper(fs, folder, tableContainer);
+    return tableContainer;
+  }
+
+  public void loadFastHybridHashJoinContainer(FileSystem fs, Path folder, MapJoinTableContainer tableContainer) throws HiveException {
+    loadFastContainerHelper(fs, folder, tableContainer);
+  }
+
   /**
    * Loads the small table into a VectorMapJoinFastTableContainer. Only used on Spark path.
-   * @param mapJoinDesc The descriptor for the map join
    * @param fs FileSystem of the folder.
    * @param folder The folder to load table container.
-   * @param hconf The hive configuration
    * @return Loaded table.
    */
   @SuppressWarnings("unchecked")
-  public MapJoinTableContainer loadFastContainer(MapJoinDesc mapJoinDesc,
-      FileSystem fs, Path folder, Configuration hconf) throws HiveException {
+  public void loadFastContainerHelper(
+      FileSystem fs, Path folder, MapJoinTableContainer tableContainer) throws HiveException {
     try {
-      VectorMapJoinFastTableContainer tableContainer =
-          new VectorMapJoinFastTableContainer(mapJoinDesc, hconf, -1);
       tableContainer.setSerde(keyContext, valueContext);
 
       if (fs.exists(folder)) {
@@ -264,7 +342,6 @@ public class MapJoinTableContainerSerDe {
       }
 
       tableContainer.seal();
-      return tableContainer;
     } catch (IOException e) {
       throw new HiveException("IO error while trying to create table container", e);
     } catch (Exception e) {
