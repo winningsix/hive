@@ -81,7 +81,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
 
     // Decode the value if necessary
     if (isCurrentPageDictionaryEncoded) {
-      valueList = decodeDictionaryIds(valueList);
+      valueList = decodeDictionaryIds(category, valueList);
     }
     // Convert valueList to array for the ListColumnVector.child
     convertValueListToListColumnVector(category, lcv, valueList, index);
@@ -169,28 +169,58 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
       return dataColumn.readDecimal();
     case TIMESTAMP:
       return dataColumn.readTimestamp();
-    case INTERVAL_DAY_TIME:
     default:
       throw new RuntimeException("Unsupported type in the list: " + type);
     }
   }
 
-  private List decodeDictionaryIds(List valueList) {
+  private List decodeDictionaryIds(PrimitiveObjectInspector.PrimitiveCategory category, List
+      valueList) {
     int total = valueList.size();
     List resultList;
     List<Integer> intList = (List<Integer>) valueList;
-    //FIXME: need to be updated to support schema evolution
-    switch (descriptor.getType()) {
-    case INT32:
+
+    switch (category) {
+    case INT:
+    case BYTE:
+    case SHORT:
       resultList = new ArrayList<Integer>(total);
       for (int i = 0; i < total; ++i) {
         resultList.add(dictionary.readInteger(intList.get(i)));
       }
       break;
-    case INT64:
+    case DATE:
+    case INTERVAL_YEAR_MONTH:
+    case LONG:
       resultList = new ArrayList<Long>(total);
       for (int i = 0; i < total; ++i) {
         resultList.add(dictionary.readLong(intList.get(i)));
+      }
+      break;
+    case BOOLEAN:
+      resultList = new ArrayList<Long>(total);
+      for (int i = 0; i < total; ++i) {
+        resultList.add(dictionary.readBoolean(intList.get(i)) ? 1 : 0);
+      }
+      break;
+    case DOUBLE:
+      resultList = new ArrayList<Long>(total);
+      for (int i = 0; i < total; ++i) {
+        resultList.add(dictionary.readDouble(intList.get(i)));
+      }
+      break;
+    case BINARY:
+      resultList = new ArrayList<Long>(total);
+      for (int i = 0; i < total; ++i) {
+        resultList.add(dictionary.readBytes(intList.get(i)));
+      }
+      break;
+    case STRING:
+    case CHAR:
+    case VARCHAR:
+      resultList = new ArrayList<Long>(total);
+      for (int i = 0; i < total; ++i) {
+        resultList.add(dictionary.readString(intList.get(i)));
       }
       break;
     case FLOAT:
@@ -199,22 +229,22 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
         resultList.add(dictionary.readFloat(intList.get(i)));
       }
       break;
-    case DOUBLE:
-      resultList = new ArrayList<Double>(total);
+    case DECIMAL:
+      resultList = new ArrayList<Long>(total);
       for (int i = 0; i < total; ++i) {
-        resultList.add(dictionary.readDouble(intList.get(i)));
+        resultList.add(dictionary.readDecimal(intList.get(i)));
       }
       break;
-    case BINARY:
-    case FIXED_LEN_BYTE_ARRAY:
-      resultList = new ArrayList<byte[]>(total);
+    case TIMESTAMP:
+      resultList = new ArrayList<Long>(total);
       for (int i = 0; i < total; ++i) {
-        resultList.add(dictionary.readBytes(intList.get(i)));
+        resultList.add(dictionary.readTimestamp(intList.get(i)));
       }
       break;
     default:
-      throw new UnsupportedOperationException("Unsupported type: " + descriptor.getType());
+      throw new RuntimeException("Unsupported type in the list: " + type);
     }
+
     return resultList;
   }
 
@@ -240,10 +270,15 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
       case INT:
       case BYTE:
       case SHORT:
-      case BOOLEAN:
         lcv.child = new LongColumnVector(total);
         for (int i = 0; i < valueList.size(); i++) {
           ((LongColumnVector)lcv.child).vector[i] = ((List<Integer>)valueList).get(i);
+        }
+        break;
+      case BOOLEAN:
+        lcv.child = new LongColumnVector(total);
+        for (int i = 0; i < valueList.size(); i++) {
+          ((LongColumnVector) lcv.child).vector[i] = ((List<Boolean>) valueList).get(i) ? 1 : 0;
         }
         break;
       case DATE:
@@ -268,7 +303,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
         lcv.child.init();
         for (int i = 0; i < valueList.size(); i++) {
           byte[] src = ((List<byte[]>)valueList).get(i);
-          ((BytesColumnVector)lcv.child).setRef(i, src, 0, src.length);
+          ((BytesColumnVector) lcv.child).setRef(i, src, 0, src.length);
         }
         break;
       case FLOAT:

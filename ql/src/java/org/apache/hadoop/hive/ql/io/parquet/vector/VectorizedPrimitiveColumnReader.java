@@ -85,6 +85,7 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
     case DATE:
     case INTERVAL_YEAR_MONTH:
     case LONG:
+    case INTERVAL_DAY_TIME:
       readLongs(num, (LongColumnVector) column, rowId);
       break;
     case BOOLEAN:
@@ -110,7 +111,6 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
     case TIMESTAMP:
       readTimestamp(num, (TimestampColumnVector) column, rowId);
       break;
-    case INTERVAL_DAY_TIME:
     default:
       throw new IOException("Unsupported type: " + type);
     }
