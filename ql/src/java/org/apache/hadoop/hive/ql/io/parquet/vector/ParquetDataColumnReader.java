@@ -37,6 +37,10 @@ public interface ParquetDataColumnReader {
   boolean readBoolean();
 
   byte[] readString();
+  
+  byte[] readVarchar();
+  
+  byte[] readChar();
 
   byte[] readBytes();
 
@@ -65,4 +69,8 @@ public interface ParquetDataColumnReader {
   Timestamp readTimestamp(int id);
 
   byte[] readString(int id);
+  
+  byte[] readVarchar(int id);
+  
+  byte[] readChar(int id);
 }

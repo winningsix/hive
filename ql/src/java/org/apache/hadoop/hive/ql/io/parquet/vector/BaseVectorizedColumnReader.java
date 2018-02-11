@@ -126,7 +126,7 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
     if (dictionaryPage != null) {
       try {
         this.dictionary = ParquetDataColumnReaderFactory
-            .getDataColumnReaderByTypeOnDictionary(parquetType.asPrimitiveType(),
+            .getDataColumnReaderByTypeOnDictionary(parquetType.asPrimitiveType(),hiveType,
                 dictionaryPage.getEncoding().initDictionary(descriptor, dictionaryPage),
                 skipTimestampConversion);
         this.isCurrentPageDictionaryEncoded = true;
@@ -178,12 +178,12 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
             "could not read page in col " + descriptor +
                 " as the dictionary was missing for encoding " + dataEncoding);
       }
-      dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(),
+      dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(), hiveType,
           dataEncoding.getDictionaryBasedValuesReader(descriptor, VALUES, dictionary
               .getDictionary()), skipTimestampConversion);
       this.isCurrentPageDictionaryEncoded = true;
     } else {
-      dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(),
+      dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(), hiveType,
           dataEncoding.getValuesReader(descriptor, VALUES), skipTimestampConversion);
       this.isCurrentPageDictionaryEncoded = false;
     }

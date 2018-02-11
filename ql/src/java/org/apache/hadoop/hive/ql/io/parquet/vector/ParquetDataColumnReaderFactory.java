@@ -18,9 +18,15 @@
 
 package org.apache.hadoop.hive.ql.io.parquet.vector;
 
+import org.apache.hadoop.hive.common.type.HiveBaseChar;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.StringExpr;
 import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTime;
 import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTimeUtils;
 import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
+import org.apache.hadoop.hive.serde2.typeinfo.CharTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.VarcharTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.io.api.Binary;
@@ -32,6 +38,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.sql.Timestamp;
+import java.util.Arrays;
 
 /**
  * Parquet file has self-describing schema which may differ from the user required schema (e.g.
@@ -50,13 +57,18 @@ public final class ParquetDataColumnReaderFactory {
   public static class DefaultParquetDataColumnReader implements ParquetDataColumnReader {
     protected ValuesReader valuesReader;
     protected Dictionary dict;
+    
+    // Varchar or char length 
+    protected int length = -1;
 
-    public DefaultParquetDataColumnReader(ValuesReader valuesReader) {
+    public DefaultParquetDataColumnReader(ValuesReader valuesReader, int length) {
       this.valuesReader = valuesReader;
+      this.length = length;
     }
 
-    public DefaultParquetDataColumnReader(Dictionary dict) {
+    public DefaultParquetDataColumnReader(Dictionary dict, int length) {
       this.dict = dict;
+      this.length = length;
     }
 
     public void initFromPage(int i, ByteBuffer byteBuffer, int i1) throws IOException {
@@ -87,6 +99,27 @@ public final class ParquetDataColumnReaderFactory {
     @Override
     public byte[] readString() {
       return valuesReader.readBytes().getBytesUnsafe();
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      // we need to enforce the size here even the types are the same
+      return valuesReader.readBytes().getBytesUnsafe();
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      return dict.decodeToBinary(id).getBytesUnsafe();
+    }
+    
+    @Override
+    public byte[] readChar() {
+      return valuesReader.readBytes().getBytesUnsafe();
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      return dict.decodeToBinary(id).getBytesUnsafe();
     }
 
     /**
@@ -176,6 +209,32 @@ public final class ParquetDataColumnReaderFactory {
     public Dictionary getDictionary() {
       return dict;
     }
+        
+    /**
+     * Enforce the max legnth of varchar or char
+     */
+    protected String enforceMaxLength(String value) {
+      return HiveBaseChar.enforceMaxLength(value, length);
+    }
+    
+    /**
+     * Enforce the char length
+     */
+    protected String getPaddedString(String value) {
+      return HiveBaseChar.getPaddedValue(value, length);
+    }
+    
+    /**
+     * Method to convert string to UTF-8 bytes
+     */
+    static protected byte[] convertToBytes(String value) {
+      try {
+        // convert integer to string
+        return value.getBytes("UTF-8");
+      } catch (UnsupportedEncodingException e) {
+        throw new RuntimeException("Failed to encode string in UTF-8", e);
+      }
+    }
   }
 
   /**
@@ -184,12 +243,12 @@ public final class ParquetDataColumnReaderFactory {
    */
   public static class TypesFromInt32PageReader extends DefaultParquetDataColumnReader {
 
-    public TypesFromInt32PageReader(ValuesReader realReader) {
-      super(realReader);
+    public TypesFromInt32PageReader(ValuesReader realReader, int length) {
+      super(realReader, length);
     }
 
-    public TypesFromInt32PageReader(Dictionary dict) {
-      super(dict);
+    public TypesFromInt32PageReader(Dictionary dict, int length) {
+      super(dict, length);
     }
 
     @Override
@@ -221,23 +280,50 @@ public final class ParquetDataColumnReaderFactory {
       return dict.decodeToInt(id);
     }
 
-    private byte[] convertToString(int value) {
-      try {
-        // convert integer to string
-        return Integer.toString(value).getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
-    }
-
     @Override
     public byte[] readString() {
-      return convertToString(valuesReader.readInteger());
+      return convertToBytes(valuesReader.readInteger());
     }
-
+    
     @Override
     public byte[] readString(int id) {
-      return convertToString(dict.decodeToInt(id));
+      return convertToBytes(dict.decodeToInt(id));
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readInteger()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToInt(id)));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readInteger()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToInt(id)));
+      return convertToBytes(value);
+    }
+    
+    static private String convertToString(int value) {
+      return Integer.toString(value);
+    }
+    
+    static private byte[] convertToBytes(int value){
+      return convertToBytes(convertToString(value));
     }
   }
 
@@ -247,12 +333,12 @@ public final class ParquetDataColumnReaderFactory {
    */
   public static class TypesFromInt64PageReader extends DefaultParquetDataColumnReader {
 
-    public TypesFromInt64PageReader(ValuesReader realReader) {
-      super(realReader);
+    public TypesFromInt64PageReader(ValuesReader realReader, int length) {
+      super(realReader, length);
     }
 
-    public TypesFromInt64PageReader(Dictionary dictionary) {
-      super(dictionary);
+    public TypesFromInt64PageReader(Dictionary dict, int length) {
+      super(dict, length);
     }
 
     @Override
@@ -274,23 +360,50 @@ public final class ParquetDataColumnReaderFactory {
       return dict.decodeToLong(id);
     }
 
-    private byte[] convertToByte(long value) {
-      try {
-        // convert long to string
-        return Long.toString(value).getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
-    }
-
-    @Override
-    public byte[] readString(int id) {
-      return convertToByte(dict.decodeToLong(id));
-    }
-
     @Override
     public byte[] readString() {
-      return convertToByte(valuesReader.readLong());
+      return convertToBytes(valuesReader.readLong());
+    }
+    
+    @Override
+    public byte[] readString(int id) {
+      return convertToBytes(dict.decodeToLong(id));
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readLong()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToLong(id)));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readLong()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToLong(id)));
+      return convertToBytes(value);
+    }
+    
+    static private String convertToString(long value) {
+      return Long.toString(value);
+    }
+    
+    static private byte[] convertToBytes(long value){
+      return convertToBytes(convertToString(value));
     }
   }
 
@@ -300,12 +413,12 @@ public final class ParquetDataColumnReaderFactory {
    */
   public static class TypesFromFloatPageReader extends DefaultParquetDataColumnReader {
 
-    public TypesFromFloatPageReader(ValuesReader realReader) {
-      super(realReader);
+    public TypesFromFloatPageReader(ValuesReader realReader, int length) {
+      super(realReader, length);
     }
 
-    public TypesFromFloatPageReader(Dictionary realReader) {
-      super(realReader);
+    public TypesFromFloatPageReader(Dictionary realReader, int length) {
+      super(realReader, length);
     }
 
     @Override
@@ -317,24 +430,51 @@ public final class ParquetDataColumnReaderFactory {
     public double readDouble(int id) {
       return dict.decodeToFloat(id);
     }
-
-    private byte[] convert(float value) {
-      try {
-        // convert float to string
-        return Float.toString(value).getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
-    }
-
+    
     @Override
     public byte[] readString() {
-      return convert(valuesReader.readFloat());
+      return convertToBytes(valuesReader.readFloat());
     }
-
+    
     @Override
     public byte[] readString(int id) {
-      return convert(dict.decodeToFloat(id));
+      return convertToBytes(dict.decodeToFloat(id));
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readFloat()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToFloat(id)));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readFloat()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToFloat(id)));
+      return convertToBytes(value);
+    }
+    
+    static private String convertToString(float value) {
+      return Float.toString(value);
+    }
+    
+    static private byte[] convertToBytes(float value){
+      return convertToBytes(convertToString(value));
     }
   }
 
@@ -343,31 +483,58 @@ public final class ParquetDataColumnReaderFactory {
    */
   public static class TypesFromDoublePageReader extends DefaultParquetDataColumnReader {
 
-    public TypesFromDoublePageReader(ValuesReader realReader) {
-      super(realReader);
+    public TypesFromDoublePageReader(ValuesReader realReader, int length) {
+      super(realReader, length);
     }
 
-    public TypesFromDoublePageReader(Dictionary realReader) {
-      super(realReader);
+    public TypesFromDoublePageReader(Dictionary dict, int length) {
+      super(dict, length);
     }
-
-    private byte[] convert(double value) {
-      try {
-        // convert float to string
-        return Double.toString(value).getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
-    }
-
+    
     @Override
     public byte[] readString() {
-      return convert(valuesReader.readDouble());
+      return convertToBytes(valuesReader.readDouble());
     }
-
+    
     @Override
     public byte[] readString(int id) {
-      return convert(dict.decodeToDouble(id));
+      return convertToBytes(dict.decodeToDouble(id));
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readDouble()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToDouble(id)));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readDouble()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToDouble(id)));
+      return convertToBytes(value);
+    }
+    
+    static private String convertToString(double value) {
+      return Double.toString(value);
+    }
+    
+    static private byte[] convertToBytes(double value){
+      return convertToBytes(convertToString(value));
     }
   }
 
@@ -376,36 +543,58 @@ public final class ParquetDataColumnReaderFactory {
    */
   public static class TypesFromBooleanPageReader extends DefaultParquetDataColumnReader {
 
-    public TypesFromBooleanPageReader(ValuesReader valuesReader) {
-      super(valuesReader);
+    public TypesFromBooleanPageReader(ValuesReader valuesReader, int length) {
+      super(valuesReader, length);
     }
 
-    public TypesFromBooleanPageReader(Dictionary dict) {
-      super(dict);
-    }
-
-    @Override
-    public byte[] readString(int id) {
-      final boolean value = dict.decodeToBoolean(id);
-
-      try {
-        // convert boolean to string
-        return Boolean.toString(value).getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
+    public TypesFromBooleanPageReader(Dictionary dict, int length) {
+      super(dict, length);
     }
 
     @Override
     public byte[] readString() {
-      final boolean value = valuesReader.readBoolean();
-
-      try {
-        // convert boolean to string
-        return Boolean.toString(value).getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
+      return convertToBytes(valuesReader.readBoolean());
+    }
+    
+    @Override
+    public byte[] readString(int id) {
+      return convertToBytes(dict.decodeToBoolean(id));
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readBoolean()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToBoolean(id)));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readBoolean()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToBoolean(id)));
+      return convertToBytes(value);
+    }
+    
+    static private String convertToString(boolean value) {
+      return Boolean.toString(value);
+    }
+    
+    static private byte[] convertToBytes(boolean value){
+      return convertToBytes(convertToString(value));
     }
   }
 
@@ -415,13 +604,13 @@ public final class ParquetDataColumnReaderFactory {
   public static class TypesFromInt96PageReader extends DefaultParquetDataColumnReader {
     private boolean skipTimestampConversion = false;
 
-    public TypesFromInt96PageReader(ValuesReader realReader, boolean skipTimestampConversion) {
-      super(realReader);
+    public TypesFromInt96PageReader(ValuesReader realReader, int length, boolean skipTimestampConversion) {
+      super(realReader, length);
       this.skipTimestampConversion = skipTimestampConversion;
     }
 
-    public TypesFromInt96PageReader(Dictionary dict, boolean skipTimestampConversion) {
-      super(dict);
+    public TypesFromInt96PageReader(Dictionary dict, int length, boolean skipTimestampConversion) {
+      super(dict, length);
       this.skipTimestampConversion = skipTimestampConversion;
     }
 
@@ -446,21 +635,49 @@ public final class ParquetDataColumnReaderFactory {
 
     @Override
     public byte[] readString() {
-      //TODO use timestampwritable to do the convert?
-      try {
-        return readTimestamp().toString().getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
+      return convertToBytes(readTimestamp());
     }
+    
     @Override
     public byte[] readString(int id) {
-      //TODO use timestampwritable to do the convert?
-      try {
-        return readTimestamp(id).toString().getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
+      return convertToBytes(readTimestamp(id));
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(
+          convertToString(readTimestamp()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(
+          convertToString(readTimestamp(id)));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(
+          convertToString(readTimestamp()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(
+          convertToString(readTimestamp(id)));
+      return convertToBytes(value);
+    }
+    
+    static private String convertToString(Timestamp value) {
+      //TODO Use TimestampWritable to do the convert?
+      return value.toString();
+    }
+    
+    static private byte[] convertToBytes(Timestamp value){
+      return convertToBytes(convertToString(value));
     }
   }
 
@@ -468,107 +685,221 @@ public final class ParquetDataColumnReaderFactory {
     private HiveDecimalWritable tempDecimal = new HiveDecimalWritable();
     private short scale;
 
-    public TypesFromDecimalPageReader(ValuesReader realReader, short scale) {
-      super(realReader);
+    public TypesFromDecimalPageReader(ValuesReader realReader, int length, short scale) {
+      super(realReader, length);
       this.scale = scale;
     }
 
-    public TypesFromDecimalPageReader(Dictionary dict, short scale) {
-      super(dict);
+    public TypesFromDecimalPageReader(Dictionary dict, int length, short scale) {
+      super(dict, length);
       this.scale = scale;
     }
-
-    private byte[] convertToString(Binary value){
-      tempDecimal.set(value.getBytesUnsafe(), scale);
-
-      try {
-        // convert boolean to string
-        return tempDecimal.toString().getBytes("UTF-8");
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException("Failed to encode string in UTF-8", e);
-      }
-    }
-
-    @Override
-    public byte[] readString(int id) {
-      return convertToString(dict.decodeToBinary(id));
-    }
-
+    
     @Override
     public byte[] readString() {
-      return convertToString(valuesReader.readBytes());
+      return convertToBytes(valuesReader.readBytes());
+    }
+    
+    @Override
+    public byte[] readString(int id) {
+      return convertToBytes(dict.decodeToBinary(id));
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readBytes()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToBinary(id)));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(
+          convertToString(valuesReader.readBytes()));
+      return convertToBytes(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(
+          convertToString(dict.decodeToBinary(id)));
+      return convertToBytes(value);
+    }
+    
+    private String convertToString(Binary value) {
+      tempDecimal.set(value.getBytesUnsafe(), scale);
+      return tempDecimal.toString();
+    }
+    
+    private byte[] convertToBytes(Binary value){
+      return convertToBytes(convertToString(value));
+    }
+  }
+  
+  /**
+   * The reader who reads from the underlying UTF8 string.
+   */
+  public static class TypesFromStringPageReader extends DefaultParquetDataColumnReader {
+
+    public TypesFromStringPageReader(ValuesReader realReader, int length) {
+      super(realReader, length);
+    }
+
+    public TypesFromStringPageReader(Dictionary dict, int length) {
+      super(dict, length);
+    }
+    
+    @Override
+    public byte[] readVarchar() {
+      // check the character numbers with the length
+      final byte[] value = valuesReader.readBytes().getBytesUnsafe();
+      return truncateIfNecesssary(value);
+    }
+    
+    @Override
+    public byte[] readVarchar(int id) {
+      // check the character numbers with the length
+      final byte[] value = dict.decodeToBinary(id).getBytesUnsafe();
+      return truncateIfNecesssary(value);
+    }
+    
+    @Override
+    public byte[] readChar() {
+      // check the character numbers with the length
+      final byte[] value = valuesReader.readBytes().getBytesUnsafe();
+      return truncateIfNecesssary(value);
+    }
+    
+    @Override
+    public byte[] readChar(int id) {
+      // check the character numbers with the length
+      final byte[] value = dict.decodeToBinary(id).getBytesUnsafe();
+      return truncateIfNecesssary(value);
+    }
+    
+    private byte[] truncateIfNecesssary(byte[] bytes) {
+      if(length <= 0 || bytes == null)
+        return bytes;
+      
+      int len = bytes.length;
+      int truncatedLength = StringExpr.truncate(bytes, 0, len, length);
+      if(truncatedLength >= len)
+        return bytes;
+      
+      return Arrays.copyOf(bytes, len);
     }
   }
 
   private static ParquetDataColumnReader getDataColumnReaderByTypeHelper(boolean isDictionary,
                                                                          PrimitiveType parquetType,
+                                                                         TypeInfo hiveType,
                                                                          Dictionary dictionary,
                                                                          ValuesReader valuesReader,
                                                                          boolean
                                                                              skipTimestampConversion)
       throws IOException {
+    // max length for varchar and char cases
+    int length = getVarcharLength(hiveType);
+    
     switch (parquetType.getPrimitiveTypeName()) {
     case INT32:
-      return isDictionary ? new TypesFromInt32PageReader(dictionary) : new
-          TypesFromInt32PageReader(valuesReader);
+      return isDictionary ? new TypesFromInt32PageReader(dictionary, length) : new
+          TypesFromInt32PageReader(valuesReader, length);
     case INT64:
-      return isDictionary ? new TypesFromInt64PageReader(dictionary) : new
-          TypesFromInt64PageReader(valuesReader);
+      return isDictionary ? new TypesFromInt64PageReader(dictionary, length) : new
+          TypesFromInt64PageReader(valuesReader, length);
     case FLOAT:
-      return isDictionary ? new TypesFromFloatPageReader(dictionary) : new
-          TypesFromFloatPageReader(valuesReader);
+      return isDictionary ? new TypesFromFloatPageReader(dictionary, length) : new
+          TypesFromFloatPageReader(valuesReader, length);
     case INT96:
-      return isDictionary ? new TypesFromInt96PageReader(dictionary, skipTimestampConversion) : new
-          TypesFromInt96PageReader(valuesReader, skipTimestampConversion);
+      return isDictionary ? new TypesFromInt96PageReader(dictionary, length, skipTimestampConversion) : new
+          TypesFromInt96PageReader(valuesReader, length, skipTimestampConversion);
     case BOOLEAN:
-      return isDictionary ? new TypesFromBooleanPageReader(dictionary) : new
-          TypesFromBooleanPageReader(valuesReader);
+      return isDictionary ? new TypesFromBooleanPageReader(dictionary, length) : new
+          TypesFromBooleanPageReader(valuesReader, length);
     case BINARY:
     case FIXED_LEN_BYTE_ARRAY:
-      return getConvertorFromBinary(isDictionary, parquetType, valuesReader, dictionary);
+      return getConvertorFromBinary(isDictionary, parquetType, hiveType, valuesReader, dictionary);
     case DOUBLE:
-      return isDictionary ? new TypesFromDoublePageReader(dictionary) : new
-          TypesFromDoublePageReader(valuesReader);
+      return isDictionary ? new TypesFromDoublePageReader(dictionary, length) : new
+          TypesFromDoublePageReader(valuesReader, length);
     default:
-      return isDictionary ? new DefaultParquetDataColumnReader(dictionary) : new
-          DefaultParquetDataColumnReader(valuesReader);
+      return isDictionary ? new DefaultParquetDataColumnReader(dictionary, length) : new
+          DefaultParquetDataColumnReader(valuesReader, length);
     }
   }
 
   private static ParquetDataColumnReader getConvertorFromBinary(boolean isDict,
                                                                 PrimitiveType parquetType,
+                                                                TypeInfo hiveType,
                                                                 ValuesReader valuesReader,
                                                                 Dictionary dictionary) {
     OriginalType originalType = parquetType.getOriginalType();
+    
+    // max length for varchar and char cases
+    int length = getVarcharLength(hiveType);
 
     if (originalType == null) {
-      return isDict ? new DefaultParquetDataColumnReader(dictionary) : new
-          DefaultParquetDataColumnReader(valuesReader);
+      return isDict ? new DefaultParquetDataColumnReader(dictionary, length) : new
+          DefaultParquetDataColumnReader(valuesReader, length);
     }
     switch (originalType) {
     case DECIMAL:
       final short scale = (short) parquetType.asPrimitiveType().getDecimalMetadata().getScale();
-      return isDict ? new TypesFromDecimalPageReader(dictionary, scale) : new
-          TypesFromDecimalPageReader(valuesReader, scale);
+      return isDict ? new TypesFromDecimalPageReader(dictionary, length, scale) : new
+          TypesFromDecimalPageReader(valuesReader, length, scale);
+    case UTF8:
+      return isDict ? new TypesFromStringPageReader(dictionary, length) : new
+          TypesFromStringPageReader(valuesReader, length);
     default:
-      return isDict ? new DefaultParquetDataColumnReader(dictionary) : new
-          DefaultParquetDataColumnReader(valuesReader);
+      return isDict ? new DefaultParquetDataColumnReader(dictionary, length) : new
+          DefaultParquetDataColumnReader(valuesReader, length);
     }
   }
 
   public static ParquetDataColumnReader getDataColumnReaderByTypeOnDictionary(
       PrimitiveType parquetType,
+      TypeInfo hiveType,
       Dictionary realReader, boolean skipTimestampConversion)
       throws IOException {
-    return getDataColumnReaderByTypeHelper(true, parquetType, realReader, null,
+    return getDataColumnReaderByTypeHelper(true, parquetType, hiveType, realReader, null,
         skipTimestampConversion);
   }
 
   public static ParquetDataColumnReader getDataColumnReaderByType(PrimitiveType parquetType,
+                                                                  TypeInfo hiveType,
                                                                   ValuesReader realReader,
                                                                   boolean skipTimestampConversion)
       throws IOException {
-    return getDataColumnReaderByTypeHelper(false, parquetType, null, realReader,
+    return getDataColumnReaderByTypeHelper(false, parquetType, hiveType, null, realReader,
         skipTimestampConversion);
+  }
+  
+
+  // For Varchar or char type, return the max length of the type
+  private static int getVarcharLength(TypeInfo hiveType) {
+    int length = -1;
+    if (hiveType instanceof PrimitiveTypeInfo) {
+      PrimitiveTypeInfo hivePrimitiveType = (PrimitiveTypeInfo)hiveType;
+      switch (hivePrimitiveType.getPrimitiveCategory()) {
+      case CHAR:
+        length = ((CharTypeInfo) hivePrimitiveType).getLength();
+        break;
+      case VARCHAR:
+        length = ((VarcharTypeInfo) hivePrimitiveType).getLength();
+        break;
+      default:
+        break;
+      }
+    }
+    
+    return length;
   }
 }

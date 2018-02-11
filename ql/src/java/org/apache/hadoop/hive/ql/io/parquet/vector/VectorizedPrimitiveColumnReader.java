@@ -98,9 +98,13 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       readBinaries(num, (BytesColumnVector) column, rowId);
       break;
     case STRING:
-    case CHAR:
-    case VARCHAR:
       readString(num, (BytesColumnVector) column, rowId);
+      break;
+    case VARCHAR:
+      readVarchar(num, (BytesColumnVector) column, rowId);
+      break;
+    case CHAR:
+      readChar(num, (BytesColumnVector) column, rowId);
       break;
     case FLOAT:
       readFloats(num, (DoubleColumnVector) column, rowId);
@@ -286,6 +290,50 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       left--;
     }
   }
+  
+  private void readChar(
+      int total,
+      BytesColumnVector c,
+      int rowId) throws IOException {
+    int left = total;
+    while (left > 0) {
+      readRepetitionAndDefinitionLevels();
+      if (definitionLevel >= maxDefLevel) {
+        c.setVal(rowId, dataColumn.readChar());
+        c.isNull[rowId] = false;
+        // TODO figure out a better way to set repeat for Binary type
+        c.isRepeating = false;
+      } else {
+        c.isNull[rowId] = true;
+        c.isRepeating = false;
+        c.noNulls = false;
+      }
+      rowId++;
+      left--;
+    }
+  }
+  
+  private void readVarchar(
+      int total,
+      BytesColumnVector c,
+      int rowId) throws IOException {
+    int left = total;
+    while (left > 0) {
+      readRepetitionAndDefinitionLevels();
+      if (definitionLevel >= maxDefLevel) {
+        c.setVal(rowId, dataColumn.readVarchar());
+        c.isNull[rowId] = false;
+        // TODO figure out a better way to set repeat for Binary type
+        c.isRepeating = false;
+      } else {
+        c.isNull[rowId] = true;
+        c.isRepeating = false;
+        c.noNulls = false;
+      }
+      rowId++;
+      left--;
+    }
+  }  
 
   private void readBinaries(
     int total,
@@ -390,11 +438,21 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       }
       break;
     case STRING:
-    case CHAR:
-    case VARCHAR:
       for (int i = rowId; i < rowId + num; ++i) {
         ((BytesColumnVector) column)
             .setVal(i, dictionary.readString((int) dictionaryIds.vector[i]));
+      }
+      break;
+    case VARCHAR:
+      for (int i = rowId; i < rowId + num; ++i) {
+        ((BytesColumnVector) column)
+            .setVal(i, dictionary.readVarchar((int) dictionaryIds.vector[i]));
+      }
+      break;
+    case CHAR:
+      for (int i = rowId; i < rowId + num; ++i) {
+        ((BytesColumnVector) column)
+            .setVal(i, dictionary.readChar((int) dictionaryIds.vector[i]));
       }
       break;
     case FLOAT:
