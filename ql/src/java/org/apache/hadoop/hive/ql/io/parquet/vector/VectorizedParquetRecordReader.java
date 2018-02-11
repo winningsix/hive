@@ -1,9 +1,13 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -11,9 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hive.ql.io.parquet.vector;
 
-import com.google.common.annotations.VisibleForTesting;
+package org.apache.hadoop.hive.ql.io.parquet.vector;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -474,9 +477,13 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
       if (columnDescriptors == null || columnDescriptors.isEmpty()) {
         throw new RuntimeException(
           "Failed to find related Parquet column descriptor with type " + type);
-      } else {
+      }
+      if (fileSchema.getColumns().contains(descriptors.get(0))) {
         return new VectorizedPrimitiveColumnReader(descriptors.get(0),
-          pages.getPageReader(descriptors.get(0)), skipTimestampConversion, type);
+          pages.getPageReader(descriptors.get(0)), skipTimestampConversion, type, typeInfo);
+      } else {
+        // Support for schema evolution
+        return new VectorizedDummyColumnReader();
       }
     case STRUCT:
       StructTypeInfo structTypeInfo = (StructTypeInfo) typeInfo;
@@ -503,7 +510,7 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
             "Failed to find related Parquet column descriptor with type " + type);
       }
       return new VectorizedListColumnReader(descriptors.get(0),
-          pages.getPageReader(descriptors.get(0)), skipTimestampConversion, type);
+          pages.getPageReader(descriptors.get(0)), skipTimestampConversion, type, typeInfo);
     case MAP:
       if (columnDescriptors == null || columnDescriptors.isEmpty()) {
         throw new RuntimeException(
@@ -535,10 +542,10 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
       List<Type> kvTypes = groupType.getFields();
       VectorizedListColumnReader keyListColumnReader = new VectorizedListColumnReader(
           descriptors.get(0), pages.getPageReader(descriptors.get(0)), skipTimestampConversion,
-          kvTypes.get(0));
+          kvTypes.get(0), typeInfo);
       VectorizedListColumnReader valueListColumnReader = new VectorizedListColumnReader(
           descriptors.get(1), pages.getPageReader(descriptors.get(1)), skipTimestampConversion,
-          kvTypes.get(1));
+          kvTypes.get(1), typeInfo);
       return new VectorizedMapColumnReader(keyListColumnReader, valueListColumnReader);
     case UNION:
     default:

@@ -22,6 +22,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.io.IOConstants;
 import org.apache.hadoop.hive.ql.io.parquet.vector.VectorizedParquetRecordReader;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
 import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.JobConf;
@@ -55,26 +56,40 @@ public class TestVectorizedColumnReader extends VectorizedColumnReaderTestBase {
   @Test
   public void testIntRead() throws Exception {
     intRead(isDictionaryEncoding);
+    longReadInt(isDictionaryEncoding);
+    floatReadInt(isDictionaryEncoding);
+    doubleReadInt(isDictionaryEncoding);
   }
 
   @Test
   public void testLongRead() throws Exception {
     longRead(isDictionaryEncoding);
+    floatReadLong(isDictionaryEncoding);
+    doubleReadLong(isDictionaryEncoding);
+  }
+
+  @Test
+  public void testTimestamp() throws Exception {
+    timestampRead(isDictionaryEncoding);
+    stringReadTimestamp(isDictionaryEncoding);
   }
 
   @Test
   public void testDoubleRead() throws Exception {
     doubleRead(isDictionaryEncoding);
+    stringReadDouble(isDictionaryEncoding);
   }
 
   @Test
   public void testFloatRead() throws Exception {
     floatRead(isDictionaryEncoding);
+    doubleReadFloat(isDictionaryEncoding);
   }
 
   @Test
   public void testBooleanRead() throws Exception {
     booleanRead();
+    stringReadBoolean();
   }
 
   @Test
@@ -101,6 +116,7 @@ public class TestVectorizedColumnReader extends VectorizedColumnReaderTestBase {
   @Test
   public void decimalRead() throws Exception {
     decimalRead(isDictionaryEncoding);
+    stringReadDecimal(isDictionaryEncoding);
   }
 
   private class TestVectorizedParquetRecordReader extends VectorizedParquetRecordReader {

@@ -1,9 +1,13 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,10 +18,10 @@
 
 package org.apache.hadoop.hive.ql.io.parquet.vector;
 
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.parquet.bytes.BytesInput;
 import org.apache.parquet.bytes.BytesUtils;
 import org.apache.parquet.column.ColumnDescriptor;
-import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.column.Encoding;
 import org.apache.parquet.column.page.DataPage;
 import org.apache.parquet.column.page.DataPageV1;
@@ -62,7 +66,7 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
   /**
    * The dictionary, if this column has dictionary encoding.
    */
-  protected final Dictionary dictionary;
+  protected final ParquetDataColumnReader dictionary;
 
   /**
    * If true, the current page is dictionary encoded.
@@ -82,7 +86,7 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
    */
   protected IntIterator repetitionLevelColumn;
   protected IntIterator definitionLevelColumn;
-  protected ValuesReader dataColumn;
+  protected ParquetDataColumnReader dataColumn;
 
   /**
    * Total values in the current page.
@@ -92,22 +96,39 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
   protected final PageReader pageReader;
   protected final ColumnDescriptor descriptor;
   protected final Type type;
+  protected final TypeInfo hiveType;
+
+  /**
+   * Used for VectorizedDummyColumnReader.
+   */
+  public BaseVectorizedColumnReader(){
+    this.pageReader = null;
+    this.descriptor = null;
+    this.type = null;
+    this.dictionary = null;
+    this.hiveType = null;
+    this.maxDefLevel = -1;
+  }
 
   public BaseVectorizedColumnReader(
       ColumnDescriptor descriptor,
       PageReader pageReader,
       boolean skipTimestampConversion,
-      Type type) throws IOException {
+      Type parquetType, TypeInfo hiveType) throws IOException {
     this.descriptor = descriptor;
-    this.type = type;
+    this.type = parquetType;
     this.pageReader = pageReader;
     this.maxDefLevel = descriptor.getMaxDefinitionLevel();
     this.skipTimestampConversion = skipTimestampConversion;
+    this.hiveType = hiveType;
 
     DictionaryPage dictionaryPage = pageReader.readDictionaryPage();
     if (dictionaryPage != null) {
       try {
-        this.dictionary = dictionaryPage.getEncoding().initDictionary(descriptor, dictionaryPage);
+        this.dictionary = ParquetDataColumnReaderFactory
+            .getDataColumnReaderByTypeOnDictionary(parquetType.asPrimitiveType(),
+                dictionaryPage.getEncoding().initDictionary(descriptor, dictionaryPage),
+                skipTimestampConversion);
         this.isCurrentPageDictionaryEncoded = true;
       } catch (IOException e) {
         throw new IOException("could not decode the dictionary for " + descriptor, e);
@@ -130,7 +151,7 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
     if (page == null) {
       return;
     }
-    // TODO: Why is this a visitor?
+
     page.accept(new DataPage.Visitor<Void>() {
       @Override
       public Void visit(DataPageV1 dataPageV1) {
@@ -146,7 +167,8 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
     });
   }
 
-  private void initDataReader(Encoding dataEncoding, byte[] bytes, int offset, int valueCount) throws IOException {
+  private void initDataReader(Encoding dataEncoding, byte[] bytes, int offset, int valueCount)
+      throws IOException {
     this.pageValueCount = valueCount;
     this.endOfPageValueCount = valuesRead + pageValueCount;
     if (dataEncoding.usesDictionary()) {
@@ -156,10 +178,13 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
             "could not read page in col " + descriptor +
                 " as the dictionary was missing for encoding " + dataEncoding);
       }
-      dataColumn = dataEncoding.getDictionaryBasedValuesReader(descriptor, VALUES, dictionary);
+      dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(),
+          dataEncoding.getDictionaryBasedValuesReader(descriptor, VALUES, dictionary
+              .getDictionary()), skipTimestampConversion);
       this.isCurrentPageDictionaryEncoded = true;
     } else {
-      dataColumn = dataEncoding.getValuesReader(descriptor, VALUES);
+      dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(),
+          dataEncoding.getValuesReader(descriptor, VALUES), skipTimestampConversion);
       this.isCurrentPageDictionaryEncoded = false;
     }
 
@@ -220,7 +245,6 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
 
   /**
    * Utility classes to abstract over different way to read ints with different encodings.
-   * TODO: remove this layer of abstraction?
    */
   abstract static class IntIterator {
     abstract int nextInt();
@@ -258,6 +282,8 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
 
   protected static final class NullIntIterator extends IntIterator {
     @Override
-    int nextInt() { return 0; }
+    int nextInt() {
+      return 0;
+    }
   }
 }
