@@ -25,7 +25,14 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.Utilities;
-import org.apache.hadoop.hive.ql.exec.vector.*;
+import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.DecimalColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.StructColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
+import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatchCtx;
 import org.apache.hadoop.hive.ql.io.IOConstants;
 import org.apache.hadoop.hive.ql.io.parquet.read.DataWritableReadSupport;
 import org.apache.hadoop.hive.ql.io.parquet.serde.ArrayWritableObjectInspector;
@@ -209,8 +216,8 @@ public class VectorizedColumnReaderTestBase {
       boolean isDictionaryEncoding,
       int index) {
     int decimalVal = index % 100;
-    String decimalStr = (decimalVal < 10) ? "0" + String.valueOf(decimalVal) : String.valueOf
-        (decimalVal);
+    String decimalStr = (decimalVal < 10) ? "0" + String.valueOf(decimalVal) : String
+        .valueOf(decimalVal);
     int intVal = (isDictionaryEncoding) ? index % UNIQUE_NUM : index / 100;
     String d = String.valueOf(intVal) + "." + decimalStr;
     return HiveDecimal.create(d);
@@ -623,13 +630,13 @@ public class VectorizedColumnReaderTestBase {
   }
 
   protected void stringReadDouble(boolean isDictionaryEncoding) throws Exception {
-    Configuration reader_conf = new Configuration();
-    reader_conf.set(IOConstants.COLUMNS, "double_field");
-    reader_conf.set(IOConstants.COLUMNS_TYPES, "string");
-    reader_conf.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS, false);
-    reader_conf.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, "0");
+    Configuration readerConf = new Configuration();
+    readerConf.set(IOConstants.COLUMNS, "double_field");
+    readerConf.set(IOConstants.COLUMNS_TYPES, "string");
+    readerConf.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS, false);
+    readerConf.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, "0");
     VectorizedParquetRecordReader reader =
-        createTestParquetReader("message test { required double double_field;}", reader_conf);
+        createTestParquetReader("message test { required double double_field;}", readerConf);
     VectorizedRowBatch previous = reader.createValue();
     try {
       int c = 0;
@@ -1019,13 +1026,13 @@ public class VectorizedColumnReaderTestBase {
   }
 
   protected void decimalRead(boolean isDictionaryEncoding) throws Exception {
-    Configuration conf = new Configuration();
-    conf.set(IOConstants.COLUMNS, "value");
-    conf.set(IOConstants.COLUMNS_TYPES, "decimal(5,2)");
-    conf.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS, false);
-    conf.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, "0");
+    Configuration readerConf = new Configuration();
+    readerConf.set(IOConstants.COLUMNS, "value");
+    readerConf.set(IOConstants.COLUMNS_TYPES, "decimal(5,2)");
+    readerConf.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS, false);
+    readerConf.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, "0");
     VectorizedParquetRecordReader reader =
-        createTestParquetReader("message hive_schema { required value (DECIMAL(5,2));}", conf);
+        createTestParquetReader("message hive_schema { required value (DECIMAL(5,2));}", readerConf);
     VectorizedRowBatch previous = reader.createValue();
     try {
       int c = 0;

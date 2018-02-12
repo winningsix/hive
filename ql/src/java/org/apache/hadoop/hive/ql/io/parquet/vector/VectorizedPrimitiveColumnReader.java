@@ -24,6 +24,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.PageReader;
 import org.apache.parquet.schema.Type;
+
 import java.io.IOException;
 
 /**
@@ -33,18 +34,18 @@ import java.io.IOException;
 public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader {
 
   public VectorizedPrimitiveColumnReader(
-    ColumnDescriptor descriptor,
-    PageReader pageReader,
-    boolean skipTimestampConversion,
-    Type type, TypeInfo hiveType) throws IOException {
+      ColumnDescriptor descriptor,
+      PageReader pageReader,
+      boolean skipTimestampConversion,
+      Type type, TypeInfo hiveType) throws IOException {
     super(descriptor, pageReader, skipTimestampConversion, type, hiveType);
   }
 
   @Override
   public void readBatch(
-    int total,
-    ColumnVector column,
-    TypeInfo columnType) throws IOException {
+      int total,
+      ColumnVector column,
+      TypeInfo columnType) throws IOException {
     int rowId = 0;
     while (total > 0) {
       // Compute the number of values we want to read in this page.
@@ -70,10 +71,10 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readBatchHelper(
-    int num,
-    ColumnVector column,
-    TypeInfo columnType,
-    int rowId) throws IOException {
+      int num,
+      ColumnVector column,
+      TypeInfo columnType,
+      int rowId) throws IOException {
     PrimitiveTypeInfo primitiveColumnType = (PrimitiveTypeInfo) columnType;
 
     switch (primitiveColumnType.getPrimitiveCategory()) {
@@ -121,9 +122,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readDictionaryIDs(
-    int total,
-    LongColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      LongColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
@@ -142,9 +143,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readIntegers(
-    int total,
-    LongColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      LongColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
@@ -163,9 +164,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readDoubles(
-    int total,
-    DoubleColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      DoubleColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
@@ -184,9 +185,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readBooleans(
-    int total,
-    LongColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      LongColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
@@ -205,9 +206,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readLongs(
-    int total,
-    LongColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      LongColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
@@ -226,9 +227,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readFloats(
-    int total,
-    DoubleColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      DoubleColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
@@ -247,9 +248,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
   }
 
   private void readDecimal(
-    int total,
-    DecimalColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      DecimalColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     c.precision = (short) type.asPrimitiveType().getDecimalMetadata().getPrecision();
     c.scale = (short) type.asPrimitiveType().getDecimalMetadata().getScale();
@@ -290,7 +291,7 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       left--;
     }
   }
-  
+
   private void readChar(
       int total,
       BytesColumnVector c,
@@ -312,7 +313,7 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       left--;
     }
   }
-  
+
   private void readVarchar(
       int total,
       BytesColumnVector c,
@@ -333,12 +334,12 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       rowId++;
       left--;
     }
-  }  
+  }
 
   private void readBinaries(
-    int total,
-    BytesColumnVector c,
-    int rowId) throws IOException {
+      int total,
+      BytesColumnVector c,
+      int rowId) throws IOException {
     int left = total;
     while (left > 0) {
       readRepetitionAndDefinitionLevels();
@@ -363,7 +364,7 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       readRepetitionAndDefinitionLevels();
       if (definitionLevel >= maxDefLevel) {
         switch (descriptor.getType()) {
-          //INT64 is not yet supported
+        //INT64 is not yet supported
         case INT96:
           c.set(rowId, dataColumn.readTimestamp());
           break;
@@ -388,11 +389,11 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
    * Reads `num` values into column, decoding the values from `dictionaryIds` and `dictionary`.
    */
   private void decodeDictionaryIds(
-    int rowId,
-    int num,
-    ColumnVector column,
-    TypeInfo columnType,
-    LongColumnVector dictionaryIds) {
+      int rowId,
+      int num,
+      ColumnVector column,
+      TypeInfo columnType,
+      LongColumnVector dictionaryIds) {
     System.arraycopy(dictionaryIds.isNull, rowId, column.isNull, rowId, num);
     if (column.noNulls) {
       column.noNulls = dictionaryIds.noNulls;

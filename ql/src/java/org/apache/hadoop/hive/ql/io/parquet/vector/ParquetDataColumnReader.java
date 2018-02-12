@@ -23,6 +23,9 @@ import org.apache.parquet.column.Dictionary;
 import java.io.IOException;
 import java.sql.Timestamp;
 
+/**
+ * The interface to wrap the underlying Parquet dictionary and non dictionary encoded page reader.
+ */
 public interface ParquetDataColumnReader {
   void initFromPage(int valueCount, byte[] page, int offset) throws IOException;
 
@@ -37,9 +40,9 @@ public interface ParquetDataColumnReader {
   boolean readBoolean();
 
   byte[] readString();
-  
+
   byte[] readVarchar();
-  
+
   byte[] readChar();
 
   byte[] readBytes();
@@ -69,8 +72,8 @@ public interface ParquetDataColumnReader {
   Timestamp readTimestamp(int id);
 
   byte[] readString(int id);
-  
+
   byte[] readVarchar(int id);
-  
+
   byte[] readChar(int id);
 }

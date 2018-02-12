@@ -126,7 +126,7 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
     if (dictionaryPage != null) {
       try {
         this.dictionary = ParquetDataColumnReaderFactory
-            .getDataColumnReaderByTypeOnDictionary(parquetType.asPrimitiveType(),hiveType,
+            .getDataColumnReaderByTypeOnDictionary(parquetType.asPrimitiveType(), hiveType,
                 dictionaryPage.getEncoding().initDictionary(descriptor, dictionaryPage),
                 skipTimestampConversion);
         this.isCurrentPageDictionaryEncoded = true;
