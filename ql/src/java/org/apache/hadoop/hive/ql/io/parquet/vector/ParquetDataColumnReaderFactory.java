@@ -793,7 +793,7 @@ public final class ParquetDataColumnReaderFactory {
       if(truncatedLength >= len)
         return bytes;
       
-      return Arrays.copyOf(bytes, len);
+      return Arrays.copyOf(bytes, truncatedLength);
     }
   }
 

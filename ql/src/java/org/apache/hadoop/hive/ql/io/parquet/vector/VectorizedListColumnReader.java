@@ -33,6 +33,7 @@ import java.util.List;
 
 /**
  * It's column level Parquet reader which is used to read a batch of records for a list column.
+ * TODO: Currently List type only support non nested case.
  */
 public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
 
@@ -46,7 +47,8 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
   boolean isFirstRow = true;
 
   public VectorizedListColumnReader(ColumnDescriptor descriptor, PageReader pageReader,
-    boolean skipTimestampConversion, Type type, TypeInfo hiveType) throws IOException {
+                                    boolean skipTimestampConversion, Type type, TypeInfo hiveType)
+      throws IOException {
     super(descriptor, pageReader, skipTimestampConversion, type, hiveType);
   }
 

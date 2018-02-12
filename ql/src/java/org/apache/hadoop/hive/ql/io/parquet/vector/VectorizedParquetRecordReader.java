@@ -64,10 +64,7 @@ import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.hadoop.util.HadoopStreams;
 import org.apache.parquet.io.InputFile;
 import org.apache.parquet.io.SeekableInputStream;
-import org.apache.parquet.schema.GroupType;
-import org.apache.parquet.schema.InvalidSchemaException;
-import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.Type;
+import org.apache.parquet.schema.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -462,6 +459,19 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
     return res;
   }
 
+  // TODO support only non nested case
+  private PrimitiveType getElementType(Type type) {
+    if (type.isPrimitive()) {
+      return type.asPrimitiveType();
+    }
+    if (type.asGroupType().getFields().size() > 1) {
+      throw new RuntimeException(
+          "Current Parquet Vectorization reader doesn't support nested type");
+    }
+    return type.asGroupType().getFields().get(0).asGroupType().getFields().get(0)
+        .asPrimitiveType();
+  }
+
   // Build VectorizedParquetColumnReader via Hive typeInfo and Parquet schema
   private VectorizedColumnReader buildVectorizedParquetReader(
     TypeInfo typeInfo,
@@ -509,8 +519,10 @@ public class VectorizedParquetRecordReader extends ParquetRecordReaderBase
         throw new RuntimeException(
             "Failed to find related Parquet column descriptor with type " + type);
       }
+
       return new VectorizedListColumnReader(descriptors.get(0),
-          pages.getPageReader(descriptors.get(0)), skipTimestampConversion, type, typeInfo);
+          pages.getPageReader(descriptors.get(0)), skipTimestampConversion, getElementType(type),
+          typeInfo);
     case MAP:
       if (columnDescriptors == null || columnDescriptors.isEmpty()) {
         throw new RuntimeException(
