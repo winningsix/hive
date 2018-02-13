@@ -31,6 +31,7 @@ import org.apache.parquet.column.page.PageReader;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
 import org.apache.parquet.io.ParquetDecodingException;
+import org.apache.parquet.schema.DecimalMetadata;
 import org.apache.parquet.schema.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -240,6 +241,19 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
               new ByteArrayInputStream(bytes.toByteArray())));
     } catch (IOException e) {
       throw new ParquetDecodingException("could not read levels in page for col " + descriptor, e);
+    }
+  }
+
+  /**
+   * Check the underlying Parquet file is able to parse as Hive Decimal type.
+   *
+   * @param type
+   */
+  protected void decimalTypeCheck(Type type) {
+    DecimalMetadata decimalMetadata = type.asPrimitiveType().getDecimalMetadata();
+    if (decimalMetadata == null) {
+      throw new UnsupportedOperationException("The underlying Parquet type cannot be able to " +
+          "converted to Hive Decimal type: " + type);
     }
   }
 

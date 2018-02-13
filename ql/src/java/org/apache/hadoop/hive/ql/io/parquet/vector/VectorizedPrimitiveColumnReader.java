@@ -251,6 +251,7 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       int total,
       DecimalColumnVector c,
       int rowId) throws IOException {
+    decimalTypeCheck(type);
     int left = total;
     c.precision = (short) type.asPrimitiveType().getDecimalMetadata().getPrecision();
     c.scale = (short) type.asPrimitiveType().getDecimalMetadata().getScale();
@@ -463,9 +464,9 @@ public class VectorizedPrimitiveColumnReader extends BaseVectorizedColumnReader 
       }
       break;
     case DECIMAL:
+      decimalTypeCheck(type);
       DecimalColumnVector decimalColumnVector = ((DecimalColumnVector) column);
-      decimalColumnVector.precision =
-          (short) type.asPrimitiveType().getDecimalMetadata().getPrecision();
+      decimalColumnVector.precision = (short) type.asPrimitiveType().getDecimalMetadata().getPrecision();
       decimalColumnVector.scale = (short) type.asPrimitiveType().getDecimalMetadata().getScale();
       for (int i = rowId; i < rowId + num; ++i) {
         decimalColumnVector.vector[i]

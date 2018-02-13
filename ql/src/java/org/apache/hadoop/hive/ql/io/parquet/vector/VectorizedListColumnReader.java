@@ -145,6 +145,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
   }
 
   // Need to be in consistent with that VectorizedPrimitiveColumnReader#readBatchHelper
+  // TODO Reduce the duplicated code
   private Object readPrimitiveTypedRow(PrimitiveObjectInspector.PrimitiveCategory category) {
     switch (category) {
     case INT:
@@ -156,7 +157,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
     case LONG:
       return dataColumn.readLong();
     case BOOLEAN:
-      return dataColumn.readBoolean();
+      return dataColumn.readBoolean() ? 1 : 0;
     case DOUBLE:
       return dataColumn.readDouble();
     case BINARY:
@@ -171,6 +172,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
       return dataColumn.readDecimal();
     case TIMESTAMP:
       return dataColumn.readTimestamp();
+    case INTERVAL_DAY_TIME:
     default:
       throw new RuntimeException("Unsupported type in the list: " + type);
     }
@@ -243,6 +245,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
         resultList.add(dictionary.readTimestamp(intList.get(i)));
       }
       break;
+    case INTERVAL_DAY_TIME:
     default:
       throw new RuntimeException("Unsupported type in the list: " + type);
     }
@@ -316,6 +319,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
       }
       break;
     case DECIMAL:
+      decimalTypeCheck(type);
       int precision = type.asPrimitiveType().getDecimalMetadata().getPrecision();
       int scale = type.asPrimitiveType().getDecimalMetadata().getScale();
       lcv.child = new DecimalColumnVector(total, precision, scale);

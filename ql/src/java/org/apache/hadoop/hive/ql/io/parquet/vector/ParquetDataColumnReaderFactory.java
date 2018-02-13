@@ -75,21 +75,20 @@ public final class ParquetDataColumnReaderFactory {
       valuesReader.initFromPage(i, byteBuffer, i1);
     }
 
+    @Override
     public void initFromPage(int valueCount, byte[] page, int offset) throws IOException {
       this.initFromPage(valueCount, ByteBuffer.wrap(page), offset);
     }
 
-    /**
-     * @return the next boolean from the page
-     */
+    @Override
     public boolean readBoolean() {
       return valuesReader.readBoolean();
     }
 
+    @Override
     public boolean readBoolean(int id) {
       return dict.decodeToBoolean(id);
     }
-
 
     @Override
     public byte[] readString(int id) {
@@ -122,13 +121,12 @@ public final class ParquetDataColumnReaderFactory {
       return dict.decodeToBinary(id).getBytesUnsafe();
     }
 
-    /**
-     * @return the next Binary from the page
-     */
+    @Override
     public byte[] readBytes() {
       return valuesReader.readBytes().getBytesUnsafe();
     }
 
+    @Override
     public byte[] readBytes(int id) {
       return dict.decodeToBinary(id).getBytesUnsafe();
     }
@@ -143,24 +141,22 @@ public final class ParquetDataColumnReaderFactory {
       return dict.decodeToBinary(id).getBytesUnsafe();
     }
 
-    /**
-     * @return the next float from the page
-     */
+    @Override
     public float readFloat() {
       return valuesReader.readFloat();
     }
 
+    @Override
     public float readFloat(int id) {
       return dict.decodeToFloat(id);
     }
 
-    /**
-     * @return the next double from the page
-     */
+    @Override
     public double readDouble() {
       return valuesReader.readDouble();
     }
 
+    @Override
     public double readDouble(int id) {
       return dict.decodeToDouble(id);
     }
@@ -175,28 +171,27 @@ public final class ParquetDataColumnReaderFactory {
       throw new RuntimeException("Unsupported operation");
     }
 
-    /**
-     * @return the next integer from the page
-     */
+    @Override
     public int readInteger() {
       return valuesReader.readInteger();
     }
 
+    @Override
     public int readInteger(int id) {
       return dict.decodeToInt(id);
     }
 
+    @Override
     public long readLong(int id) {
       return dict.decodeToLong(id);
     }
 
-    /**
-     * @return the next long from the page
-     */
+    @Override
     public long readLong() {
       return valuesReader.readLong();
     }
 
+    @Override
     public int readValueDictionaryId() {
       return valuesReader.readValueDictionaryId();
     }
@@ -276,6 +271,7 @@ public final class ParquetDataColumnReaderFactory {
       return valuesReader.readInteger();
     }
 
+    @Override
     public double readDouble(int id) {
       return dict.decodeToInt(id);
     }
@@ -356,6 +352,7 @@ public final class ParquetDataColumnReaderFactory {
       return valuesReader.readLong();
     }
 
+    @Override
     public double readDouble(int id) {
       return dict.decodeToLong(id);
     }
