@@ -284,7 +284,7 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
     case BOOLEAN:
       lcv.child = new LongColumnVector(total);
       for (int i = 0; i < valueList.size(); i++) {
-        ((LongColumnVector) lcv.child).vector[i] = ((List<Boolean>) valueList).get(i) ? 1 : 0;
+        ((LongColumnVector) lcv.child).vector[i] = ((List<Integer>) valueList).get(i);
       }
       break;
     case DATE:
@@ -377,9 +377,10 @@ public class VectorizedListColumnReader extends BaseVectorizedColumnReader {
         System.arraycopy(((LongColumnVector) lcv.child).vector, start,
             ((LongColumnVector) resultCV).vector, 0, length);
       } catch (Exception e) {
-        throw new RuntimeException("colinmjj:index:" + index + ", start:" + start + ",length:" + length
-            + ",vec len:" + ((LongColumnVector) lcv.child).vector.length + ", offset len:" + lcv.offsets.length
-            + ", len len:" + lcv.lengths.length, e);
+        throw new RuntimeException(
+            "Fail to copy at index:" + index + ", start:" + start + ",length:" + length + ",vec " +
+                "len:" + ((LongColumnVector) lcv.child).vector.length + ", offset len:" + lcv
+                .offsets.length + ", len len:" + lcv.lengths.length, e);
       }
     }
     if (child instanceof DoubleColumnVector) {
